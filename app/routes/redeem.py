@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db_session
 from app.schemas.redeem import RedeemVerifyRequest, RedeemVerifyResponse
+from app.deps_staff import get_current_staff
 
 router = APIRouter(prefix="/offers", tags=["redeem"])
 
@@ -17,9 +18,21 @@ async def redeem_verify_qr(
     offer_id: int,
     payload: RedeemVerifyRequest,
     db: AsyncSession = Depends(get_db_session),
+    staff: dict = Depends(get_current_staff),
 ) -> RedeemVerifyResponse:
 
     now = datetime.now(timezone.utc)
+    offer_owner = (await db.execute(
+        text("""
+            SELECT o.id
+            FROM offers o
+            WHERE o.id = :oid AND o.restaurant_id = :rid
+        """),
+        {"oid": offer_id, "rid": int(staff["restaurant_id"])},
+    )).first()
+
+if not offer_owner:
+    return RedeemVerifyResponse(status="INVALID", offer_id=offer_id)
 
     # 🔒 FOR UPDATE já abre transação implicitamente
     claim = (await db.execute(
