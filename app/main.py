@@ -5,6 +5,7 @@ from app.settings import settings
 from app.routes.offers import router as offers_router
 from app.routes.admin import router as admin_router
 from app.routes.redeem import router as redeem_router
+from app.routes.staff_auth import router as staff_auth_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -15,6 +16,7 @@ app = FastAPI(
 app.include_router(offers_router)
 app.include_router(admin_router)
 app.include_router(redeem_router)
+app.include_router(staff_auth_router)
 
 
 @app.get("/health")
