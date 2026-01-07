@@ -15,8 +15,8 @@ config = context.config
 
 # Railway/MVP: não dependa de logging config no alembic.ini
 # Se quiser logs, a gente configura depois.
-# if config.config_file_name is not None:
-#     fileConfig(config.config_file_name)
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
 
