@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str | None = None
     CELERY_RESULT_BACKEND: str | None = None
 
+    #Authentication
+    JWT_SECRET: str
+    JWT_ALG: str = "HS256"
+    JWT_EXPIRES_MIN: int = 60 * 24  # 24h
+
     @property
     def celery_broker(self) -> str:
         return self.CELERY_BROKER_URL or self.REDIS_URL
