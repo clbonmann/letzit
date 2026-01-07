@@ -3,6 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel, EmailStr
+from app.security import hash_password
 
 from app.db import get_db_session
 from app.schemas.admin import (
@@ -153,5 +155,43 @@ async def add_targets(offer_id: int, payload: AddTargetsRequest, db: AsyncSessio
         "offer_id": offer_id,
         "targets_total": int(count_targets),
         "missing_user_ids": missing,
+    }
+class CreateStaffRequest(BaseModel):
+    restaurant_id: int
+    email: EmailStr
+    password: str
+    role: str = "admin"  # admin | cashier
+
+
+@router.post("/staff")
+async def create_staff(payload: CreateStaffRequest, db: AsyncSession = Depends(get_db_session)) -> dict:
+    # valida restaurant
+    r = (await db.execute(
+        text("SELECT id FROM restaurants WHERE id = :rid AND is_active = true"),
+        {"rid": payload.restaurant_id},
+    )).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Restaurant not found/active")
+
+    row = (await db.execute(
+        text("""
+            INSERT INTO restaurant_staff (restaurant_id, email, password_hash, role, is_active)
+            VALUES (:rid, :email, :ph, :role, true)
+            RETURNING id, restaurant_id, email, role
+        """),
+        {
+            "rid": payload.restaurant_id,
+            "email": payload.email,
+            "ph": hash_password(payload.password),
+            "role": payload.role,
+        },
+    )).mappings().first()
+
+    await db.commit()
+    return {
+        "id": int(row["id"]),
+        "restaurant_id": int(row["restaurant_id"]),
+        "email": row["email"],
+        "role": row["role"],
     }
 
