@@ -116,23 +116,23 @@ async def create_offer(
 
 
 @router.post("/offers/{offer_id}/targets")
-async def add_targets(
-    offer_id: int,
-    payload: AddTargetsRequest,
-    db: AsyncSession = Depends(get_db_session),
-) -> dict:
-    # valida offer
-    offer = (await db.execute(
-        text("SELECT id FROM offers WHERE id = :oid"),
-        {"oid": offer_id},
-    )).first()
+async def add_targets(offer_id: int, payload: AddTargetsRequest, db: AsyncSession = Depends(get_db_session)) -> dict:
+    offer = (await db.execute(text("SELECT id FROM offers WHERE id = :oid"), {"oid": offer_id})).first()
     if not offer:
         raise HTTPException(status_code=404, detail="Offer not found")
 
-    # insere targets (idempotente)
-    inserted = 0
-    for uid in payload.user_ids:
-        res = await db.execute(
+    # pega apenas users existentes
+    existing_users = (await db.execute(
+        text("SELECT id FROM users WHERE id = ANY(:ids)"),
+        {"ids": payload.user_ids},
+    )).scalars().all()
+    existing_users = set(existing_users)
+
+    missing = [uid for uid in payload.user_ids if uid not in existing_users]
+
+    # insere só os existentes
+    for uid in existing_users:
+        await db.execute(
             text("""
                 INSERT INTO offer_targets (offer_id, user_id, batch_no, state)
                 VALUES (:oid, :uid, :batch, :state)
@@ -140,14 +140,18 @@ async def add_targets(
             """),
             {"oid": offer_id, "uid": uid, "batch": payload.batch_no, "state": payload.state},
         )
-        # rowcount pode ser None dependendo do driver; então contamos via SELECT depois (simples)
-        inserted += 1
 
     await db.commit()
 
     count_targets = (await db.execute(
-        text("SELECT COUNT(*) AS c FROM offer_targets WHERE offer_id = :oid"),
+        text("SELECT COUNT(*) FROM offer_targets WHERE offer_id = :oid"),
         {"oid": offer_id},
-    )).mappings().first()["c"]
+    )).scalar_one()
 
-    return {"ok": True, "offer_id": offer_id, "targets_total": int(count_targets)}
+    return {
+        "ok": True,
+        "offer_id": offer_id,
+        "targets_total": int(count_targets),
+        "missing_user_ids": missing,
+    }
+
