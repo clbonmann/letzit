@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
@@ -15,14 +14,9 @@ from app.settings import settings
 
 
 def _normalize_db_url(url: str) -> str:
-    """
-    Railway normalmente fornece postgresql://...
-    Para SQLAlchemy async, queremos postgresql+asyncpg://...
-    """
     if url.startswith("postgresql://"):
         return url.replace("postgresql://", "postgresql+asyncpg://", 1)
     if url.startswith("postgres://"):
-        # alguns provedores usam postgres:// (deprecated)
         return url.replace("postgres://", "postgresql+asyncpg://", 1)
     return url
 
@@ -44,23 +38,13 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
-@asynccontextmanager
+# ✅ Dependency correta para FastAPI
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """
-    Dependency para injetar sessão nos endpoints:
-    async with get_db_session() as db: ...
-    """
     async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+        yield session
 
 
 async def db_healthcheck() -> bool:
-    """
-    Checa rapidamente se o Postgres está ok.
-    """
     try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
