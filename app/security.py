@@ -3,9 +3,14 @@ from passlib.context import CryptContext
 from jose import jwt
 
 from app.settings import settings
+from fastapi import HTTPException, status
+
+def _require_jwt_secret() -> str:
+    if not settings.JWT_SECRET:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="JWT_SECRET not configured")
+    return settings.JWT_SECRET
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
