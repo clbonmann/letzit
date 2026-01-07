@@ -9,3 +9,5 @@ redis==5.0.8
 celery==5.4.0
 passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.3.0
+pydantic[email]==2.12.0
+
