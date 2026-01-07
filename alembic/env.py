@@ -9,6 +9,7 @@ from alembic import context
 from app.settings import settings
 from app.models import Base
 
+import os
 
 config = context.config
 
@@ -17,14 +18,17 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-
 def get_database_url() -> str:
-    url = settings.DATABASE_URL
+    url = os.environ.get("DATABASE_URL", "")
+    if not url:
+        raise RuntimeError("DATABASE_URL is not set")
+
     if url.startswith("postgresql://"):
         return url.replace("postgresql://", "postgresql+asyncpg://", 1)
     if url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql+asyncpg://", 1)
     return url
+
 
 
 def run_migrations_offline():
