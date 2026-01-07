@@ -4,6 +4,7 @@ from app.settings import settings
 # IMPORTS CORRETOS DOS ROUTERS
 from app.routes.offers import router as offers_router
 from app.routes.admin import router as admin_router
+from app.routes.redeem import router as redeem_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -13,6 +14,8 @@ app = FastAPI(
 # REGISTRO DOS ROUTERS
 app.include_router(offers_router)
 app.include_router(admin_router)
+app.include_router(redeem_router)
+
 
 @app.get("/health")
 def health():
