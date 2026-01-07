@@ -1,9 +1,11 @@
 from fastapi import FastAPI
 from app.settings import settings
 from app.db import db_healthcheck
+from app.routes.admin import router as admin_router
 
 app = FastAPI(title=settings.APP_NAME, debug=settings.DEBUG)
 
+app.include_router(admin_router)
 app.include_router(offers_router)
 
 @app.get("/health")
