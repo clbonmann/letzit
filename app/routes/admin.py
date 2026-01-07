@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, EmailStr
 from app.security import hash_password
+from sqlalchemy.exc import IntegrityError
 
 from app.db import get_db_session
 from app.schemas.admin import (
@@ -156,38 +157,62 @@ async def add_targets(offer_id: int, payload: AddTargetsRequest, db: AsyncSessio
         "targets_total": int(count_targets),
         "missing_user_ids": missing,
     }
+
 class CreateStaffRequest(BaseModel):
     restaurant_id: int
     email: EmailStr
     password: str
     role: str = "admin"  # admin | cashier
 
-
 @router.post("/staff")
-async def create_staff(payload: CreateStaffRequest, db: AsyncSession = Depends(get_db_session)) -> dict:
+async def create_staff(
+    payload: CreateStaffRequest,
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    role = payload.role.strip().lower()
+    if role not in {"admin", "cashier"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="role must be admin or cashier")
+
     # valida restaurant
     r = (await db.execute(
         text("SELECT id FROM restaurants WHERE id = :rid AND is_active = true"),
         {"rid": payload.restaurant_id},
     )).first()
     if not r:
-        raise HTTPException(status_code=404, detail="Restaurant not found/active")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found/active")
 
-    row = (await db.execute(
-        text("""
-            INSERT INTO restaurant_staff (restaurant_id, email, password_hash, role, is_active)
-            VALUES (:rid, :email, :ph, :role, true)
-            RETURNING id, restaurant_id, email, role
-        """),
-        {
-            "rid": payload.restaurant_id,
-            "email": payload.email,
-            "ph": hash_password(payload.password),
-            "role": payload.role,
-        },
-    )).mappings().first()
+    try:
+        row = (await db.execute(
+            text("""
+                INSERT INTO restaurant_staff (restaurant_id, email, password_hash, role, is_active)
+                VALUES (:rid, :email, :ph, :role, true)
+                RETURNING id, restaurant_id, email, role
+            """),
+            {
+                "rid": payload.restaurant_id,
+                "email": payload.email.strip().lower(),
+                "ph": hash_password(payload.password),
+                "role": role,
+            },
+        )).mappings().first()
 
-    await db.commit()
+        await db.commit()
+
+    except IntegrityError as e:
+        await db.rollback()
+        msg = str(e.orig).lower() if getattr(e, "orig", None) else str(e).lower()
+
+        # email duplicado no mesmo restaurante (uq_restaurant_email)
+        if "uq_restaurant_email" in msg or "unique" in msg:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Staff email already exists for this restaurant")
+
+        # check role (ck_restaurant_staff_role)
+        if "ck_restaurant_staff_role" in msg or "check constraint" in msg:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role")
+
+        # fallback
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid data")
+
     return {
         "id": int(row["id"]),
         "restaurant_id": int(row["restaurant_id"]),
