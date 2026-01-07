@@ -4,6 +4,8 @@ from app.db import db_healthcheck
 
 app = FastAPI(title=settings.APP_NAME, debug=settings.DEBUG)
 
+app.include_router(offers_router)
+
 @app.get("/health")
 async def health():
     # Liveness: só diz que a API está de pé
