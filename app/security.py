@@ -1,26 +1,33 @@
+import hashlib
 from datetime import datetime, timedelta, timezone
+
 from passlib.context import CryptContext
 from jose import jwt
 
 from app.settings import settings
-from fastapi import HTTPException, status
-
-def _require_jwt_secret() -> str:
-    if not settings.JWT_SECRET:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="JWT_SECRET not configured")
-    return settings.JWT_SECRET
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
+def _prehash(password: str) -> str:
+    """
+    Pré-hash com SHA-256 para evitar limite de 72 bytes do bcrypt
+    """
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return pwd_context.hash(_prehash(password))
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return pwd_context.verify(password, password_hash)
+    return pwd_context.verify(_prehash(password), password_hash)
 
 
 def create_access_token(subject: str, extra: dict | None = None) -> str:
+    if not settings.JWT_SECRET:
+        raise RuntimeError("JWT_SECRET not configured")
+
     now = datetime.now(timezone.utc)
     payload = {
         "sub": subject,
@@ -29,4 +36,5 @@ def create_access_token(subject: str, extra: dict | None = None) -> str:
     }
     if extra:
         payload.update(extra)
+
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALG)
