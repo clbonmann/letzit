@@ -17,7 +17,9 @@ def _prehash(password: str) -> str:
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(_prehash(password))
+    pre = _prehash(password)
+    print("hash_password lengths:", len(password.encode("utf-8")), len(pre.encode("utf-8")))
+    return pwd_context.hash(pre)
 
 
 def verify_password(password: str, password_hash: str) -> bool:
