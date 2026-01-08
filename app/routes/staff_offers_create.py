@@ -56,7 +56,7 @@ async def create_offer(
 ) -> CreateOfferResponse:
     rid = int(staff["restaurant_id"])
     now = datetime.now(timezone.utc)
-    end_offer = now + timedelta(hours=12)
+    end_at = now + timedelta(hours=12)
 
     # Restaurante precisa ter geog (e idealmente city)
     rest = (
@@ -148,7 +148,7 @@ async def create_offer(
                         :accept_limit,
                         :max_target_total,
                         :now,
-                        :end_offer
+                        :end_at
                     )
                     RETURNING id
                 """),
@@ -161,7 +161,7 @@ async def create_offer(
                     "accept_limit": int(payload.accept_limit),
                     "max_target_total": int(payload.max_target_total),
                     "now": now,
-                    "end_offer": end_offer,
+                    "end_at": end_at,
                 },
             )
         ).scalar_one()
@@ -221,7 +221,7 @@ async def create_offer(
                         FROM offers o
                         JOIN restaurants r ON r.id = o.restaurant_id
                         WHERE o.placement = 'CITY_HOME'
-                          AND o.end_offer > now()
+                          AND o.end_at > now()
                           AND COALESCE(o.status, 'ACTIVE') = 'ACTIVE'
                           AND COALESCE(r.city, '') = :city
                     """),
@@ -277,7 +277,7 @@ async def create_offer(
                             :accept_limit,
                             :max_target_total,
                             :now,
-                            :end_offer
+                            :end_at
                         )
                         RETURNING id
                     """),
@@ -290,7 +290,7 @@ async def create_offer(
                         "accept_limit": int(payload.accept_limit),
                         "max_target_total": int(payload.max_target_total),
                         "now": now,
-                        "end_offer": end_offer,
+                        "end_at": end_at,
                     },
                 )
             ).scalar_one()
