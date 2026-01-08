@@ -62,6 +62,7 @@ async def accept_offer(
         return AcceptOfferResponse(
             status="SOLD_OUT",
             offer_id=offer_id,
+            user_id=user_id,
             accepted_count=accepted_count,
             accept_limit=accept_limit,
         )
@@ -81,6 +82,7 @@ async def accept_offer(
             return AcceptOfferResponse(
                 status="ACCEPTED",
                 offer_id=offer_id,
+                user_id=user_id,
                 expires_at=existing["expires_at"],
                 qr_token=existing["qr_token"],
                 accepted_count=accepted_count,
@@ -120,6 +122,7 @@ async def accept_offer(
             return AcceptOfferResponse(
                 status="ACCEPTED",
                 offer_id=offer_id,
+                user_id=user_id,
                 expires_at=existing2["expires_at"],
                 qr_token=existing2["qr_token"],
                 accepted_count=accepted_count,
