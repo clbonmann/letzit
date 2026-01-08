@@ -219,10 +219,14 @@ async def create_offer(
                 await db.execute(
                     text("""
                         SELECT COUNT(*)::int
-                        FROM city_offer_slots
-                        WHERE city=:city AND starts_at=:s AND ends_at=:e
+                        FROM offers o
+                        JOIN restaurants r ON r.id = o.restaurant_id
+                        WHERE o.placement = 'CITY_HOME'
+                          AND o.end_offer > now()
+                          AND COALESCE(o.status, 'ACTIVE') = 'ACTIVE'
+                        AND COALESCE(r.city, '') = :city
                     """),
-                    {"city": city, "s": starts_at, "e": ends_at},
+                    {"city": city},
                 )
             ).scalar_one()
 
