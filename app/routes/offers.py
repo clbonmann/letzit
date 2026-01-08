@@ -39,7 +39,7 @@ async def accept_offer(
         {"oid": offer_id, "uid": user_id},
     )).first()
     if not target:
-        return AcceptOfferResponse(status="NOT_ELIGIBLE", offer_id=offer_id)
+        return AcceptOfferResponse(status="OFFER_NOT_ELIGIBLE", offer_id=offer_id)
 
     # 3) lock offer row (this is the FCFS part)
     offer = (await db.execute(
