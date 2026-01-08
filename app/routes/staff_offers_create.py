@@ -136,7 +136,7 @@ async def create_offer(
                         accept_limit,
                         max_target_total,
                         created_at,
-                        end_offer
+                        end_at
                     )
                     VALUES (
                         :rid,
@@ -265,7 +265,7 @@ async def create_offer(
                             accept_limit,
                             max_target_total,
                             created_at,
-                            end_offer
+                            end_at
                         )
                         VALUES (
                             :rid,
