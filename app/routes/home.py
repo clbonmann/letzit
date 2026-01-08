@@ -13,23 +13,23 @@ async def home_featured(city: str, db: AsyncSession = Depends(get_db_session)):
 
     rows = (await db.execute(
         text("""
-            SELECT
-                o.id,
-                o.restaurant_id,
-                o.title,
-                o.message,
-                o.price_cents,
-                o.radius_km,
-                o.created_at,
-                o.end_offer
-            FROM offers o
-            JOIN restaurants r ON r.id = o.restaurant_id
-            WHERE o.placement = 'CITY_HOME'
-              AND o.end_offer > now()
-              AND COALESCE(o.status, 'ACTIVE') = 'ACTIVE'
-              AND COALESCE(r.city, '') = :city
-            ORDER BY o.created_at DESC
-            LIMIT 5
+           SELECT
+             o.id,
+             o.restaurant_id,
+             o.title,
+             o.message,
+             o.price_cents,
+             o.radius_km,
+             o.created_at,
+             o.end_at
+          FROM offers o
+          JOIN restaurants r ON r.id = o.restaurant_id
+          WHERE o.placement = 'CITY_HOME'
+           AND o.end_at > now()
+           AND o.status = 'ACTIVE'
+           AND r.city = :city
+        ORDER BY o.created_at DESC
+        LIMIT 5
         """),
         {"city": city_norm},
     )).mappings().all()
