@@ -216,93 +216,120 @@ async def create_offer(
 
         # 4) Lock por cidade+janela pra evitar corrida (último slot)
         lock_key = f"city_home:{city}:{starts_at.isoformat()}:{ends_at.isoformat()}"
-        await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": lock_key})
+# abre lock transacional (vale até commit/rollback)
+await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": lock_key})
 
-        try:
-            async with db.begin():  # transação
-                # 5) checa slots usados
-                used = (await db.execute(
-                    text("""
-                        SELECT COUNT(*)::int
-                        FROM city_offer_slots
-                        WHERE city = :city
-                          AND starts_at = :starts
-                          AND ends_at = :ends
-                    """),
-                    {"city": city, "starts": starts_at, "ends": ends_at},
-                )).scalar_one()
+try:
+    # 5) checa slots usados
+    used = (await db.execute(
+        text("""
+            SELECT COUNT(*)::int
+            FROM city_offer_slots
+            WHERE city = :city
+              AND starts_at = :starts
+              AND ends_at = :ends
+        """),
+        {"city": city, "starts": starts_at, "ends": ends_at},
+    )).scalar_one()
 
-                if int(used) >= max_slots:
-                    raise HTTPException(status_code=409, detail="SOLD_OUT")
+    if int(used) >= max_slots:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="SOLD_OUT")
 
-                # 6) audiência (20km, mais “cidade inteira”)
-                active_minutes = int(payload.active_minutes)
-                audience = (await db.execute(
-                    text("""
-                        SELECT COUNT(*)::int
-                        FROM users u
-                        WHERE u.geog IS NOT NULL
-                          AND u.last_loc_at > now() - make_interval(mins => :mins)
-                          AND ST_DWithin(u.geog, (SELECT geog FROM restaurants WHERE id = :rid), :radius_m)
-                    """),
-                    {"rid": rid, "mins": active_minutes, "radius_m": radius_m},
-                )).scalar_one()
+    # 6) audiência
+    audience = (await db.execute(
+        text("""
+            SELECT COUNT(*)::int
+            FROM users u
+            WHERE u.geog IS NOT NULL
+              AND u.last_loc_at > now() - make_interval(mins => :mins)
+              AND ST_DWithin(u.geog, (SELECT geog FROM restaurants WHERE id = :rid), :radius_m)
+        """),
+        {"rid": rid, "mins": active_minutes, "radius_m": radius_m},
+    )).scalar_one()
 
-                # 7) cria offer
-                offer_id = (await db.execute(
-                    text("""
-                        INSERT INTO offers (
-                            restaurant_id, placement, radius_km, price_cents,
-                            audience_estimate, title, message, accept_limit, max_target_total,
-                            created_at
-                        )
-                        VALUES (
-                            :rid, 'CITY_HOME', :radius_km, :price_cents,
-                            :aud, :title, :message, :accept_limit, :max_target_total,
-                            :now
-                        )
-                        RETURNING id
-                    """),
-                    {
-                        "rid": rid,
-                        "radius_km": radius_km,
-                        "price_cents": price_cents,
-                        "aud": int(audience),
-                        "title": payload.title,
-                        "message": payload.message,
-                        "accept_limit": int(payload.accept_limit),
-                        "max_target_total": int(payload.max_target_total),
-                        "now": now,
-                    },
-                )).scalar_one()
+    # 7) cria offer
+    offer_id = (await db.execute(
+        text("""
+            INSERT INTO offers (
+                restaurant_id,
+                title,
+                message,
+                placement,
+                radius_km,
+                price_cents,
+                accept_limit,
+                max_target_total,
+                created_at,
+                end_offer
+            )
+            VALUES (
+                :rid,
+                :title,
+                :message,
+                'CITY_HOME',
+                :radius_km,
+                :price_cents,
+                :accept_limit,
+                :max_target_total,
+                :now,
+                :end_offer
+            )
+            RETURNING id
+        """),
+        {
+            "rid": rid,
+            "title": payload.title,
+            "message": payload.message,
+            "radius_km": radius_km,
+            "price_cents": price_cents,
+            "accept_limit": int(payload.accept_limit),
+            "max_target_total": int(payload.max_target_total),
+            "now": now,
+            "end_offer": end_offer,
+        },
+    )).scalar_one()
 
-                # 8) reserva slot
-                await db.execute(
-                    text("""
-                        INSERT INTO city_offer_slots (
-                            city, starts_at, ends_at,
-                            offer_id, restaurant_id, price_cents
-                        )
-                        VALUES (
-                            :city, :starts, :ends,
-                            :offer_id, :rid, :price_cents
-                        )
-                    """),
-                    {
-                        "city": city,
-                        "starts": starts_at,
-                        "ends": ends_at,
-                        "offer_id": int(offer_id),
-                        "rid": rid,
-                        "price_cents": price_cents,
-                    },
-                )
+    # 8) reserva slot
+    await db.execute(
+        text("""
+            INSERT INTO city_offer_slots (
+                city, starts_at, ends_at,
+                offer_id, restaurant_id, price_cents
+            )
+            VALUES (
+                :city, :starts, :ends,
+                :offer_id, :rid, :price_cents
+            )
+        """),
+        {
+            "city": city,
+            "starts": starts_at,
+            "ends": ends_at,
+            "offer_id": int(offer_id),
+            "rid": rid,
+            "price_cents": price_cents,
+        },
+    )
 
-            # begin() commita automaticamente se não houver exception
+    await db.commit()
 
-        except HTTPException:
-            # repassa SOLD_OUT etc.
-            raise
+except HTTPException:
+    # já fiz rollback acima quando SOLD_OUT; aqui só garante consistência
+    try:
+        await db.rollback()
+    except Exception:
+        pass
+    raise
+
+except IntegrityError:
+    await db.rollback()
+    raise HTTPException(status_code=409, detail="Slot collision (try again)")
+
+except Exception:
+    await db.rollback()
+    raise
+
         except IntegrityError:
             await db.rollback()
             raise HTTPException(status_code=409, detail="Slot collision (try again)")
