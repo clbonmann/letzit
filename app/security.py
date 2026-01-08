@@ -6,8 +6,7 @@ from jose import jwt
 
 from app.settings import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 def _prehash(password: str) -> str:
     """
