@@ -25,7 +25,7 @@ async def accept_offer(
     )).mappings().first()
 
     if not user_row:
-        return AcceptOfferResponse(status="NOT_ELIGIBLE", offer_id=offer_id)
+        return AcceptOfferResponse(status="USER_NOT_ELIGIBLE", offer_id=offer_id)
 
     if user_row["is_blocked"]:
         return AcceptOfferResponse(status="BLOCKED", offer_id=offer_id)
