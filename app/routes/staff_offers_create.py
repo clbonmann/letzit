@@ -211,7 +211,7 @@ async def create_offer(
         city = _normalize_city(city)
         starts_at, ends_at = _utc_day_window(now)
 
-        lock_key = f"city_home:{city}:{starts_at}:{ends_at}"
+        lock_key = f"city_home:{city}"
         await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": lock_key})
 
         try:
