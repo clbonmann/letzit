@@ -151,7 +151,7 @@ async def create_offer(
                         :accept_limit,
                         :max_target_total,
                         :now,
-                        :end_offer
+                        :end_at
                     )
                     RETURNING id
                 """),
@@ -164,7 +164,7 @@ async def create_offer(
                     "accept_limit": payload.accept_limit,
                     "max_target_total": payload.max_target_total,
                     "now": now,
-                    "end_offer": end_offer,
+                    "end_at": end_offer,
                 },
             )
         ).scalar_one()
