@@ -18,7 +18,7 @@ async def offers_nearby(
 ):
     if not x_user_id:
         raise HTTPException(401, "X-User-Id header required")
-
+    uid = int(x_user_id) 
     radius_km = int(radius_km)
     if radius_km < 1 or radius_km > 20:
         raise HTTPException(400, "radius_km must be between 1 and 20")
