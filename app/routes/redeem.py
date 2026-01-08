@@ -88,11 +88,13 @@ async def redeem_verify_qr(
 
     # ✅ Só valida, não consome
     return RedeemVerifyResponse(
-        status="VALID",
-        offer_id=offer_id,
-        claim_id=int(claim["id"]),
-        user_id=int(claim["user_id"]),
-    )
+    status="VALID",
+    offer_id=offer_id,
+    claim_id=int(claim["id"]),
+    user_id=int(claim["user_id"]),
+    expires_at=claim["expires_at"],
+)
+
 
 
 @router.post("/{offer_id}/redeem/consume", response_model=RedeemConsumeResponse)
