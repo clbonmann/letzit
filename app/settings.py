@@ -20,6 +20,8 @@ class Settings(BaseSettings):
 
     #Authentication
     JWT_SECRET: str | None = None
+    JWT_EXPIRES_MIN: int = 60 * 24  # 24 horas
+    JWT_ALG: str = "HS256"
 
     @property
     def celery_broker(self) -> str:
