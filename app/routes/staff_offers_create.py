@@ -69,7 +69,7 @@ async def create_offer(
 ) -> CreateOfferResponse:
     rid = int(staff["restaurant_id"])
     now = datetime.now(timezone.utc)
-
+    end_offer = now + timedelta(hours=12)
     # 1) Restaurante precisa ter geog
     rest = (await db.execute(
         text("""
@@ -139,7 +139,8 @@ async def create_offer(
                 price_cents,
                 accept_limit,
                 max_target_total,
-                created_at
+                created_at,
+                end_at
            )
            VALUES (
              :rid,
@@ -151,6 +152,7 @@ async def create_offer(
              :accept_limit,
              :max_target_total,
              :now
+             :end_offer
            )
            RETURNING id
            """),
@@ -164,6 +166,7 @@ async def create_offer(
            "accept_limit": int(payload.accept_limit),
            "max_target_total": int(payload.max_target_total),
            "now": now,
+           "end_offer": end_offer,
         },
     )).scalar_one()
 
