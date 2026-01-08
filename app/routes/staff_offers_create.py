@@ -24,10 +24,10 @@ class CreateOfferRequest(BaseModel):
     radius_km: int | None = Field(default=None, ge=1, le=50)
     active_minutes: int = Field(30, ge=1, le=240)
 
-    # CITY_HOME
+    # CITY_HOME (se restaurants.city estiver vazio, você pode mandar no payload)
     city: str | None = None
 
-    # negócio
+    # oferta
     title: str | None = Field(default=None, max_length=80)
     message: str | None = Field(default=None, max_length=300)
     accept_limit: int = Field(25, ge=1, le=500)
@@ -41,17 +41,11 @@ class CreateOfferResponse(BaseModel):
     price_cents: int
     audience_estimate: int
     city: str | None = None
-    slot_status: str | None = None
+    slot_status: str | None = None  # CITY_HOME: RESERVED / SOLD_OUT
 
 
 def _normalize_city(s: str) -> str:
     return s.strip().lower().replace(" ", "_").replace("-", "_")
-
-
-def _utc_day_window(now_utc: datetime) -> tuple[datetime, datetime]:
-    start = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc)
-    end = start + timedelta(days=1)
-    return start, end
 
 
 @router.post("", response_model=CreateOfferResponse)
@@ -60,15 +54,18 @@ async def create_offer(
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
 ) -> CreateOfferResponse:
-
     rid = int(staff["restaurant_id"])
     now = datetime.now(timezone.utc)
     end_offer = now + timedelta(hours=12)
 
-    # Restaurante
+    # Restaurante precisa ter geog (e idealmente city)
     rest = (
         await db.execute(
-            text("SELECT geog, COALESCE(city, '') AS city FROM restaurants WHERE id = :rid"),
+            text("""
+                SELECT geog, COALESCE(city, '') AS city
+                FROM restaurants
+                WHERE id = :rid
+            """),
             {"rid": rid},
         )
     ).mappings().first()
@@ -82,11 +79,11 @@ async def create_offer(
     placement: Placement = payload.placement
 
     # =====================================================
-    # NORMAL
+    # NORMAL (por raio)
     # =====================================================
     if placement == "NORMAL":
         if payload.radius_km is None:
-            raise HTTPException(400, "radius_km is required")
+            raise HTTPException(400, "radius_km is required for NORMAL")
 
         radius_km = int(payload.radius_km)
         radius_m = radius_km * 1000
@@ -107,17 +104,17 @@ async def create_offer(
         ).scalar_one_or_none()
 
         if price_cents is None:
-            raise HTTPException(400, "radius_km not available")
+            raise HTTPException(400, "radius_km not available in pricing_radius")
 
         audience = (
             await db.execute(
                 text("""
                     SELECT COUNT(*)::int
-                    FROM users
-                    WHERE geog IS NOT NULL
-                      AND last_loc_at > now() - make_interval(mins => :mins)
+                    FROM users u
+                    WHERE u.geog IS NOT NULL
+                      AND u.last_loc_at > now() - make_interval(mins => :mins)
                       AND ST_DWithin(
-                        geog,
+                        u.geog,
                         (SELECT geog FROM restaurants WHERE id=:rid),
                         :radius_m
                       )
@@ -139,7 +136,7 @@ async def create_offer(
                         accept_limit,
                         max_target_total,
                         created_at,
-                        end_at
+                        end_offer
                     )
                     VALUES (
                         :rid,
@@ -161,8 +158,8 @@ async def create_offer(
                     "message": payload.message,
                     "radius_km": radius_km,
                     "price_cents": int(price_cents),
-                    "accept_limit": payload.accept_limit,
-                    "max_target_total": payload.max_target_total,
+                    "accept_limit": int(payload.accept_limit),
+                    "max_target_total": int(payload.max_target_total),
                     "now": now,
                     "end_offer": end_offer,
                 },
@@ -172,17 +169,18 @@ async def create_offer(
         await db.commit()
 
         return CreateOfferResponse(
-            offer_id=offer_id,
+            offer_id=int(offer_id),
             placement="NORMAL",
             radius_km=radius_km,
-            price_cents=price_cents,
-            audience_estimate=audience,
+            price_cents=int(price_cents),
+            audience_estimate=int(audience),
         )
 
     # =====================================================
-    # CITY_HOME
+    # CITY_HOME (rolling 5 sempre por cidade)
     # =====================================================
     if placement == "CITY_HOME":
+        # Pricing do BD (fixo 20km e 5 slots, mas configurável no DB)
         pricing = (
             await db.execute(
                 text("""
@@ -197,24 +195,25 @@ async def create_offer(
         ).mappings().first()
 
         if not pricing:
-            raise HTTPException(400, "city_offers_pricing not configured")
+            raise HTTPException(400, "city_offers_pricing not configured (radius_km=20)")
 
-        radius_km = int(pricing["radius_km"])
+        radius_km = int(pricing["radius_km"])  # 20
         radius_m = radius_km * 1000
-        max_slots = int(pricing["max_slots"])
-        price_cents = int(pricing["price_cents"])
+        max_slots = int(pricing["max_slots"])  # 5
+        price_cents = int(pricing["price_cents"])  # 2999
 
+        # Cidade: payload.city override, senão restaurants.city
         city = payload.city or rest["city"]
         if not city:
-            raise HTTPException(400, "city is required")
-
+            raise HTTPException(400, "city is required (payload.city or restaurants.city)")
         city = _normalize_city(city)
-        starts_at, ends_at = _utc_day_window(now)
 
+        # Lock por cidade pra evitar corrida ao ocupar último slot
         lock_key = f"city_home:{city}"
         await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": lock_key})
 
         try:
+            # Conta quantas CITY_HOME ativas existem AGORA nessa cidade
             used = (
                 await db.execute(
                     text("""
@@ -224,30 +223,32 @@ async def create_offer(
                         WHERE o.placement = 'CITY_HOME'
                           AND o.end_offer > now()
                           AND COALESCE(o.status, 'ACTIVE') = 'ACTIVE'
-                        AND COALESCE(r.city, '') = :city
+                          AND COALESCE(r.city, '') = :city
                     """),
                     {"city": city},
                 )
             ).scalar_one()
 
-            if used >= max_slots:
+            if int(used) >= max_slots:
                 await db.rollback()
                 raise HTTPException(409, "SOLD_OUT")
 
+            # Audiência (20km, últimos N minutos)
+            active_minutes = int(payload.active_minutes)
             audience = (
                 await db.execute(
                     text("""
                         SELECT COUNT(*)::int
-                        FROM users
-                        WHERE geog IS NOT NULL
-                          AND last_loc_at > now() - make_interval(mins => :mins)
+                        FROM users u
+                        WHERE u.geog IS NOT NULL
+                          AND u.last_loc_at > now() - make_interval(mins => :mins)
                           AND ST_DWithin(
-                            geog,
+                            u.geog,
                             (SELECT geog FROM restaurants WHERE id=:rid),
                             :radius_m
                           )
                     """),
-                    {"rid": rid, "mins": payload.active_minutes, "radius_m": radius_m},
+                    {"rid": rid, "mins": active_minutes, "radius_m": radius_m},
                 )
             ).scalar_one()
 
@@ -264,7 +265,7 @@ async def create_offer(
                             accept_limit,
                             max_target_total,
                             created_at,
-                            end_at
+                            end_offer
                         )
                         VALUES (
                             :rid,
@@ -286,40 +287,22 @@ async def create_offer(
                         "message": payload.message,
                         "radius_km": radius_km,
                         "price_cents": price_cents,
-                        "accept_limit": payload.accept_limit,
-                        "max_target_total": payload.max_target_total,
+                        "accept_limit": int(payload.accept_limit),
+                        "max_target_total": int(payload.max_target_total),
                         "now": now,
                         "end_offer": end_offer,
                     },
                 )
             ).scalar_one()
 
-            await db.execute(
-                text("""
-                    INSERT INTO city_offer_slots (
-                        city, starts_at, ends_at,
-                        offer_id, restaurant_id, price_cents
-                    )
-                    VALUES (:city, :s, :e, :oid, :rid, :price)
-                """),
-                {
-                    "city": city,
-                    "s": starts_at,
-                    "e": ends_at,
-                    "oid": offer_id,
-                    "rid": rid,
-                    "price": price_cents,
-                },
-            )
-
             await db.commit()
 
             return CreateOfferResponse(
-                offer_id=offer_id,
+                offer_id=int(offer_id),
                 placement="CITY_HOME",
                 radius_km=radius_km,
                 price_cents=price_cents,
-                audience_estimate=audience,
+                audience_estimate=int(audience),
                 city=city,
                 slot_status="RESERVED",
             )
@@ -328,7 +311,7 @@ async def create_offer(
             raise
         except IntegrityError:
             await db.rollback()
-            raise HTTPException(409, "Slot collision")
+            raise HTTPException(409, "Collision, try again")
         except Exception:
             await db.rollback()
             raise
