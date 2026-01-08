@@ -128,32 +128,44 @@ async def create_offer(
         )).scalar_one()
 
         # 4) Cria offer
-        row = (await db.execute(
-            text("""
-                INSERT INTO offers (
-                    restaurant_id, placement, radius_km, price_cents,
-                    audience_estimate, title, message, accept_limit, max_target_total,
-                    created_at
-                )
-                VALUES (
-                    :rid, 'NORMAL', :radius_km, :price_cents,
-                    :aud, :title, :message, :accept_limit, :max_target_total,
-                    :now
-                )
-                RETURNING id
-            """),
-            {
-                "rid": rid,
-                "radius_km": radius_km,
-                "price_cents": int(price_cents),
-                "aud": int(audience),
-                "title": payload.title,
-                "message": payload.message,
-                "accept_limit": int(payload.accept_limit),
-                "max_target_total": int(payload.max_target_total),
-                "now": now,
-            },
-        )).scalar_one()
+        offer_id = (await db.execute(
+           text("""
+               INSERT INTO offers (
+                restaurant_id,
+                title,
+                message,
+                placement,
+                radius_km,
+                price_cents,
+                accept_limit,
+                max_target_total,
+                created_at
+           )
+           VALUES (
+             :rid,
+             :title,
+             :message,
+             :placement,
+             :radius_km,
+             :price_cents,
+             :accept_limit,
+             :max_target_total,
+             :now
+           )
+           RETURNING id
+           """),
+        {
+           "rid": rid,
+           "title": payload.title,
+           "message": payload.message,
+           "placement": placement,
+           "radius_km": radius_km,
+           "price_cents": int(price_cents),
+           "accept_limit": int(payload.accept_limit),
+           "max_target_total": int(payload.max_target_total),
+           "now": now,
+        },
+    )).scalar_one()
 
         await db.commit()
 
