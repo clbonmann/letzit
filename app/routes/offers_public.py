@@ -37,32 +37,35 @@ async def offers_nearby(
 
     radius_m = radius_km * 1000
 
-    rows = (await db.execute(
-        text("""
+    rows = (
+        await db.execute(
+            text("""
             SELECT
-                o.id,
-                o.restaurant_id,
-                r.name AS restaurant_name,
-                r.city AS restaurant_city,
-                o.title,
-                o.message,
-                o.price_cents,
-                o.radius_km,
-                o.created_at,
-                o.end_at,
-                ST_Distance(:u_geog::geography, r.geog)::int AS distance_m
-            FROM offers o
-            JOIN restaurants r ON r.id = o.restaurant_id
-            WHERE o.placement = 'NORMAL'
-              AND o.status = 'ACTIVE'
-              AND o.end_at > now()
-              AND r.geog IS NOT NULL
-              AND ST_DWithin(:u_geog::geography, r.geog, :radius_m)
-            ORDER BY distance_m ASC, o.created_at DESC
-            LIMIT :limit
-        """),
-        {"u_geog": u_geog, "radius_m": radius_m, "limit": limit},
-    )).mappings().all()
+            o.id,
+            o.restaurant_id,
+            r.name AS restaurant_name,
+            r.city AS restaurant_city,
+            o.title,
+            o.message,
+            o.price_cents,
+            o.radius_km,
+            o.created_at,
+            o.end_at,
+            ST_Distance(CAST(:u_geog AS geography), r.geog)::int AS distance_m
+           FROM offers o
+           JOIN restaurants r ON r.id = o.restaurant_id
+           WHERE o.placement = 'NORMAL'
+           AND o.status = 'ACTIVE'
+           AND o.end_at > now()
+           AND r.geog IS NOT NULL
+           AND ST_DWithin(CAST(:u_geog AS geography), r.geog, :radius_m)
+           ORDER BY distance_m ASC, o.created_at DESC
+           LIMIT :limit
+           """),
+         {"u_geog": u_geog, "radius_m": radius_m, "limit": limit},
+        )
+    ).mappings().all()
+
 
     return {
         "radius_km": radius_km,
