@@ -55,16 +55,17 @@ async def quote_offer(
     active_minutes = payload.active_minutes
 
     audience = (await db.execute(
-    text("""
-        SELECT COUNT(*)::int
-        FROM users u
-        WHERE u.geog IS NOT NULL
-          AND u.last_loc_at > now() - make_interval(mins => :mins)
-          AND ST_DWithin(u.geog, :r_geog::geography, :radius_m)
-    """),
-    {"r_geog": r[0], "radius_m": radius_m, "mins": active_minutes},
-)).scalar_one()
-
+        text("""
+           SELECT COUNT(*)::int
+           FROM users u
+           JOIN restaurants r ON r.id = :rid
+           WHERE u.geog IS NOT NULL
+              AND r.geog IS NOT NULL
+              AND u.last_loc_at > now() - make_interval(mins => :mins)
+            AND ST_DWithin(u.geog, r.geog, :radius_m)
+        """),
+        {"rid": rid, "mins": int(active_minutes), "radius_m": int(radius_m)},
+    )).scalar_one()
 
     return QuoteResponse(
         radius_km=radius_km,
