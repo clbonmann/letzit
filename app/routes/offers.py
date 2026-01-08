@@ -138,6 +138,7 @@ async def accept_offer(
     return AcceptOfferResponse(
         status="ACCEPTED",
         offer_id=offer_id,
+        user_id=user_id,
         expires_at=expires_at,
         qr_token=qr_token,
         accepted_count=accepted_count + 1,
