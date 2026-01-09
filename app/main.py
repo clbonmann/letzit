@@ -16,6 +16,7 @@ from app.routes.staff_jobs import router as staff_jobs_router
 from app.routes.staff_offers_list import router as staff_offers_list_router
 from app.routes.staff_offers_eligible_users import router as staff_offers_eligible_users_router
 from app.routes.staff_offers_close import router as staff_offers_close_router
+from app.routes.staff_offers_repeat import router as staff_offers_repeat_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -37,6 +38,7 @@ app.include_router(staff_jobs_router)
 app.include_router(staff_offers_list_router)
 app.include_router(staff_offers_eligible_users_router)
 app.include_router(staff_offers_close_router)
+app.include_router(staff_offers_repeat_router)
 
 @app.get("/health")
 def health():
