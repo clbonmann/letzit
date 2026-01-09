@@ -34,10 +34,18 @@ async def accept_offer(
         return AcceptOfferResponse(status="COOLDOWN", offer_id=offer_id)
 
     # 2) must be targeted
-    target = (await db.execute(
-        text("SELECT 1 FROM offer_targets WHERE offer_id = :oid AND user_id = :uid"),
-        {"oid": offer_id, "uid": user_id},
-    )).first()
+    target = (
+        await db.execute(
+            text("""
+             SELECT 1
+             FROM offer_targets
+             WHERE offer_id = :oid
+             AND user_id = :uid
+             AND released_at IS NOT NULL
+             """),
+            {"oid": offer_id, "uid": user_id},
+        )
+    ).first()
     if not target:
         return AcceptOfferResponse(status="OFFER_NOT_ELIGIBLE", offer_id=offer_id, user_id=user_id)
 
@@ -92,7 +100,7 @@ async def accept_offer(
 
     # 5) insert claim
     ttl_hours = int(offer["accept_ttl_hours"] or 6)
-    expires_at = now + timedelta(hours=ttl_hours)
+    expires_at = min(offer["end_at"], now + timedelta(hours=ttl_hours))
     qr_token = uuid4()
 
     inserted = (await db.execute(
