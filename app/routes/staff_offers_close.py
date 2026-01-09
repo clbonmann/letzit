@@ -31,13 +31,13 @@ async def close_offer(
     row = (await db.execute(
         text("""
             UPDATE offers o
-            SET status = 'CLOSED'
+            SET status = 'CLOSED',closed_at=:now, chnage_at=:now
             WHERE o.id = :oid
               AND o.restaurant_id = :rid
               AND COALESCE(o.status, 'ACTIVE') IN ('CREATED', 'ACTIVE')
             RETURNING o.id, o.status
         """),
-        {"oid": offer_id, "rid": rid},
+        {"oid": offer_id, "rid": rid, "now": now},
     )).mappings().first()
 
     # Se não atualizou, pode ser: não existe, não é do restaurante, ou já estava fechada
