@@ -132,7 +132,7 @@ async def add_targets(offer_id: int, payload: AddTargetsRequest, db: AsyncSessio
     existing_users = set(existing_users)
 
     missing = [uid for uid in payload.user_ids if uid not in existing_users]
-
+   
     # insere só os existentes
     for uid in existing_users:
         await db.execute(
@@ -150,7 +150,24 @@ async def add_targets(offer_id: int, payload: AddTargetsRequest, db: AsyncSessio
         text("SELECT COUNT(*) FROM offer_targets WHERE offer_id = :oid"),
         {"oid": offer_id},
     )).scalar_one()
-
+    
+     # altera o status da oferta na tabela offers
+    await db.execute(
+        text("""
+           UPDATE offers o
+           SET status = 'ACTIVE'
+           WHERE o.id = :offer_id
+           AND o.status = 'CREATED'
+           AND EXISTS (
+             SELECT 1
+             FROM offer_targets t
+             WHERE t.offer_id = o.id
+             AND t.released_at IS NOT NULL
+          """),
+         {"offer_id": offer_id},
+     )
+    await db.commit()
+    
     return {
         "ok": True,
         "offer_id": offer_id,
