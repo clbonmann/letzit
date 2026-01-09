@@ -31,7 +31,7 @@ async def close_offer(
     row = (await db.execute(
         text("""
             UPDATE offers o
-            SET status = 'CLOSED',closed_at=:now, chnage_at=:now
+            SET status = 'CLOSED',closed_at=:now, change_at=:now
             WHERE o.id = :oid
               AND o.restaurant_id = :rid
               AND COALESCE(o.status, 'ACTIVE') IN ('CREATED', 'ACTIVE')
