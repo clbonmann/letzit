@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
-from app.jobs.no_show import run_no_show_job
+import app.jobs.no_show as no_show
 
 router = APIRouter(prefix="/staff/jobs", tags=["staff-jobs"])
 
@@ -17,6 +17,6 @@ async def job_no_show(
 ):
     # se você quiser restringir a “admin staff”, checa staff["role"] aqui
     try:
-        return await run_no_show_job(db, cooldown_hours=cooldown_hours)
+        return await no_show.run_no_show_job(db, cooldown_hours=cooldown_hours)
     except Exception as e:
         raise HTTPException(500, f"job failed: {e}")
