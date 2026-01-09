@@ -162,7 +162,7 @@ async def add_targets(offer_id: int, payload: AddTargetsRequest, db: AsyncSessio
              SELECT 1
              FROM offer_targets t
              WHERE t.offer_id = o.id
-             AND t.released_at IS NOT NULL
+             AND t.released_at IS NOT NULL)
           """),
          {"offer_id": offer_id},
      )
