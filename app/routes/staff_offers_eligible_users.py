@@ -78,7 +78,7 @@ async def eligible_users_for_offer(
                 :radius_m
             )
             {extra_exclude}
-            ORDER BY distance_m DESC
+            ORDER BY distance_m ASC
             LIMIT :limit
            """),
           {
