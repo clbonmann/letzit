@@ -53,34 +53,43 @@ async def eligible_users_for_offer(
     if exclude_already_targeted:
         extra_exclude = """
           AND NOT EXISTS (
-              SELECT 1
-              FROM offer_targets t
-              WHERE t.offer_id = :oid
-                AND t.user_id = u.id
-          )
-        """
+          SELECT 1
+          FROM offer_targets t
+          WHERE t.offer_id = :oid
+          AND t.user_id = u.id
+         )
+         """
 
-    rows = (await db.execute(
-        text(f"""
+    rows = (
+        await db.execute(
+            text(f"""
             SELECT
-                u.id AS user_id,
-                ST_Distance(u.geog, :r_geog::geography)::int AS distance_m
+            u.id AS user_id,
+            ST_Distance(
+                u.geog,
+                (SELECT r.geog FROM restaurants r WHERE r.id = :rid)
+            )::int AS distance_m
             FROM users u
             WHERE u.geog IS NOT NULL
-              AND u.last_loc_at > now() - make_interval(mins => :mins)
-              AND ST_DWithin(u.geog, :r_geog::geography, :radius_m)
-              {extra_exclude}
+            AND u.last_loc_at > now() - make_interval(mins => :mins)
+            AND ST_DWithin(
+                u.geog,
+                (SELECT r.geog FROM restaurants r WHERE r.id = :rid),
+                :radius_m
+            )
+            {extra_exclude}
             ORDER BY distance_m DESC
             LIMIT :limit
-        """),
-        {
-            "oid": offer_id,
-            "r_geog": offer["r_geog"],
-            "mins": int(active_minutes),
-            "radius_m": radius_m,
-            "limit": int(limit),
-        },
-    )).mappings().all()
+           """),
+          {
+           "oid": offer_id,
+           "rid": rid,
+           "mins": int(active_minutes),
+           "radius_m": radius_m,
+           "limit": int(limit),
+         },
+        )
+    ).mappings().all()
 
     return {
         "offer_id": int(offer_id),
