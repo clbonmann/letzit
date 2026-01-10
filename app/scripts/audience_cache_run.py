@@ -52,10 +52,8 @@ async def run_once() -> None:
     if url.startswith("postgresql+psycopg2://"):
         url = url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
     return url
-    
     db_url = to_asyncpg(settings.DATABASE_URL)
     engine = create_async_engine(db_url, pool_pre_ping=True)
-
     Session = async_sessionmaker(engine, expire_on_commit=False)
 
     now = datetime.now(timezone.utc)
