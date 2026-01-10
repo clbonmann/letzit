@@ -21,6 +21,7 @@ from app.routes.staff_offers_update import router as staff_offers_update_router
 from app.routes.staff_debug_accept import router as staff_debug_router
 from app.routes.staff_audience_stats import router as staff_audience_router
 from app.routes.staff_restaurant import router as staff_restaurant_router
+from app.routes.staff_users import router as staff_users_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -47,6 +48,7 @@ app.include_router(staff_offers_update_router)
 app.include_router(staff_debug_router)
 app.include_router(staff_audience_router)
 app.include_router(staff_restaurant_router)
+app.include_router(staff_users_router)
 
 @app.get("/health")
 def health():
