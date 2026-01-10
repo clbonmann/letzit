@@ -41,8 +41,7 @@ DO UPDATE SET
 """)
 
 async def run_once() -> None:
-  
-def to_asyncpg(url: str) -> str:
+  def to_asyncpg(url: str) -> str:
     # Railway às vezes fornece "postgres://"
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://"):]
@@ -53,9 +52,9 @@ def to_asyncpg(url: str) -> str:
     if url.startswith("postgresql+psycopg2://"):
         url = url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
     return url
-
-db_url = to_asyncpg(settings.DATABASE_URL)
-engine = create_async_engine(db_url, pool_pre_ping=True)
+    
+    db_url = to_asyncpg(settings.DATABASE_URL)
+    engine = create_async_engine(db_url, pool_pre_ping=True)
 
     Session = async_sessionmaker(engine, expire_on_commit=False)
 
