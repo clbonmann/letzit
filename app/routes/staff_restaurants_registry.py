@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
 
-router = APIRouter(prefix="/staff/restaurants", tags=["staff-restaurants"])
+router = APIRouter(prefix="/staff", tags=["staff-restaurant"])
 
 
 class RestaurantRegistryItem(BaseModel):
