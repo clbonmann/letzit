@@ -57,11 +57,11 @@ async def create_restaurant(
 ) -> CreateRestaurantResponse:
     row = (await db.execute(
         text("""
-            INSERT INTO restaurants (name, is_active)
-            VALUES (:name, true)
+            INSERT INTO restaurants (name, cnpj, is_active)
+            VALUES (:name, :cnpj, true)
             RETURNING id, name
         """),
-        {"name": payload.name},
+        {"name": payload.name, "cnpj": payload.cnpj},
     )).mappings().first()
 
     await db.commit()
