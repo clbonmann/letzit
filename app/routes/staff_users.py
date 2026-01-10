@@ -57,7 +57,7 @@ async def create_staff_user(
     try:
         row = (await db.execute(
             text("""
-                INSERT INTO restaurant_staff (restaurant_id, email, ph, role, is_active, name)
+                INSERT INTO restaurant_staff (restaurant_id, email, password_hash, role, is_active, name)
                 VALUES (:rid, :email, :ph, :role, true, :name)
                 RETURNING id, restaurant_id, email, role, is_active, name, created_at, changed_at
             """),
