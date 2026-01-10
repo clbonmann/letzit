@@ -86,7 +86,28 @@ async def accept_offer_as_user(
     )).mappings().first()
 
     if not offer or offer["status"] != "ACTIVE" or offer["end_at"] <= now:
-        return AcceptOfferResponse(status="CLOSED", offer_id=offer_id)
+    # tenta pegar info mínima pra satisfazer schema
+        meta = (await db.execute(
+            text("""
+                SELECT accept_limit, accepted_count
+                FROM offers
+                WHERE id = :oid
+               """),
+               {"oid": offer_id},
+        )
+    ).mappings().first()
+
+    accept_limit = int(meta["accept_limit"]) if meta else 0
+    accepted_count = int(meta["accepted_count"]) if meta else 0
+
+    return AcceptOfferResponse(
+        status="CLOSED",
+        offer_id=offer_id,
+        user_id=user_id,
+        accepted_count=accepted_count,
+        accept_limit=accept_limit,
+    )
+
 
     accept_limit = int(offer["accept_limit"])
     accepted_count = int(offer["accepted_count"])
