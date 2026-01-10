@@ -41,7 +41,22 @@ DO UPDATE SET
 """)
 
 async def run_once() -> None:
-    engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
+   
+  def to_asyncpg(url: str) -> str:
+    # Railway às vezes fornece "postgres://"
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    # força asyncpg se vier sem driver
+    if url.startswith("postgresql://") and "+asyncpg" not in url:
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    # se alguém colocou "postgres://user:pass@..." também cai aqui
+    if url.startswith("postgresql+psycopg2://"):
+        url = url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
+    return url
+
+db_url = to_asyncpg(settings.DATABASE_URL)
+engine = create_async_engine(db_url, pool_pre_ping=True)
+
     Session = async_sessionmaker(engine, expire_on_commit=False)
 
     now = datetime.now(timezone.utc)
