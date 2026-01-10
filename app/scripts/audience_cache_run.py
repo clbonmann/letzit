@@ -40,14 +40,17 @@ WHERE u.geog IS NOT NULL
 """)
 
 UPSERT_SQL = text("""
-INSERT INTO restaurant_audience_cache (restaurant_id, active_minutes, counts_by_radius, computed_at)
-VALUES (:rid, 15, :counts::jsonb, :computed_at)
+INSERT INTO restaurant_audience_cache 
+  (restaurant_id, active_minutes, counts_by_radius, computed_at)
+VALUES 
+  (:rid, 15, CAST(:counts AS jsonb), :computed_at)
 ON CONFLICT (restaurant_id)
 DO UPDATE SET
   active_minutes = 15,
   counts_by_radius = EXCLUDED.counts_by_radius,
   computed_at = EXCLUDED.computed_at;
 """)
+
 
 
 async def run_once() -> None:
