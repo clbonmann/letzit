@@ -9,6 +9,15 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from app.settings import settings
 
+
+def to_asyncpg(url: str) -> str:
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if url.startswith("postgresql://") and "+asyncpg" not in url:
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+
 RADIUS_COUNTS_SQL = text("""
 WITH r AS (
   SELECT geog
@@ -40,33 +49,26 @@ DO UPDATE SET
   computed_at = EXCLUDED.computed_at;
 """)
 
+
 async def run_once() -> None:
-  def to_asyncpg(url: str) -> str:
-    # Railway às vezes fornece "postgres://"
-    if url.startswith("postgres://"):
-        url = "postgresql://" + url[len("postgres://"):]
-    # força asyncpg se vier sem driver
-    if url.startswith("postgresql://") and "+asyncpg" not in url:
-        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    # se alguém colocou "postgres://user:pass@..." também cai aqui
-    if url.startswith("postgresql+psycopg2://"):
-        url = url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
-    return url
     db_url = to_asyncpg(settings.DATABASE_URL)
+    print("[audience-cache] DB URL scheme:", db_url.split("://", 1)[0])
+
     engine = create_async_engine(db_url, pool_pre_ping=True)
     Session = async_sessionmaker(engine, expire_on_commit=False)
 
     now = datetime.now(timezone.utc)
 
     async with Session() as db:
-        # pega restaurantes com geog
         restaurants = (await db.execute(
             text("SELECT id FROM restaurants WHERE geog IS NOT NULL")
         )).scalars().all()
 
         updated = 0
+
         for rid in restaurants:
             row = (await db.execute(RADIUS_COUNTS_SQL, {"rid": int(rid)})).mappings().first()
+
             counts = {
                 "1": int(row["km1"]),
                 "2": int(row["km2"]),
@@ -78,10 +80,16 @@ async def run_once() -> None:
                 "30": int(row["km30"]),
                 "50": int(row["km50"]),
             }
+
             await db.execute(
                 UPSERT_SQL,
-                {"rid": int(rid), "counts": json.dumps(counts), "computed_at": now},
+                {
+                    "rid": int(rid),
+                    "counts": json.dumps(counts),
+                    "computed_at": now,
+                },
             )
+
             updated += 1
 
         await db.commit()
@@ -89,8 +97,10 @@ async def run_once() -> None:
     await engine.dispose()
     print(f"[audience-cache] computed_at={now.isoformat()} restaurants_updated={updated}")
 
+
 def main() -> None:
     asyncio.run(run_once())
+
 
 if __name__ == "__main__":
     main()
