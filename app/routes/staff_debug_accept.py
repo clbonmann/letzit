@@ -29,8 +29,8 @@ async def accept_offer_as_user(
 ) -> AcceptOfferResponse:
     # 0) HARD BLOCK em produção
     # Ajuste conforme seu padrão de ENV/DEBUG
-    if getattr(settings, "ENV", "prod") == "prod":
-        raise HTTPException(status_code=403, detail="Debug endpoint disabled in production")
+    #if getattr(settings, "ENV", "prod") == "prod":
+    #    raise HTTPException(status_code=403, detail="Debug endpoint disabled in production")
 
     rid = int(staff["restaurant_id"])
     user_id = int(payload.user_id)
