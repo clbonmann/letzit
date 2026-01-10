@@ -41,8 +41,8 @@ DO UPDATE SET
 """)
 
 async def run_once() -> None:
-   
-  def to_asyncpg(url: str) -> str:
+  
+def to_asyncpg(url: str) -> str:
     # Railway às vezes fornece "postgres://"
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://"):]
