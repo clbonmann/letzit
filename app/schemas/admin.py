@@ -15,7 +15,7 @@ class CreateUserResponse(BaseModel):
 
 class CreateRestaurantRequest(BaseModel):
     name: str
-
+    cnpj: str
 
 class CreateRestaurantResponse(BaseModel):
     id: int
