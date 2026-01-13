@@ -5,21 +5,19 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db_session
+from app.deps_user import get_current_user_id
 
 router = APIRouter(prefix="/offers", tags=["offers"])
-
 
 @router.get("/nearby")
 async def offers_nearby(
     radius_km: int = 2,
     limit: int = 50,
-    x_user_id: int | None = Header(default=None, alias="X-User-Id"),
+    # O FastAPI injeta o ID extraído do token aqui 👇
+    uid: int = Depends(get_current_user_id), 
     db: AsyncSession = Depends(get_db_session),
 ):
-    if not x_user_id:
-        raise HTTPException(401, "X-User-Id header required")
-    uid = int(x_user_id) 
-    radius_km = int(radius_km)
+    # Remova as validações manuais de x_user_id, o Depends já cuidou disso.
     if radius_km < 1 or radius_km > 20:
         raise HTTPException(400, "radius_km must be between 1 and 20")
 
