@@ -23,7 +23,7 @@ async def update_my_restaurant(
     
     if staff["role"] == 'INTERNAL_ADMIN':
        rid = payload.id 
-    else 
+    else:
        int(staff["restaurant_id"])
 
     # carregar atual
