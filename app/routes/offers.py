@@ -1,24 +1,55 @@
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
-from fastapi import APIRouter, Depends
+from uuid import uuid4, UUID
+from typing import Optional
+
+from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 
-from app.db import get_db_session
-from app.deps import get_current_user_id
-from app.schemas.offers import AcceptOfferResponse
+from app.db import get_db_session, AsyncSessionLocal
+# Ajuste o import abaixo se seu arquivo de auth tiver outro nome (ex: app.deps_user)
+from app.deps import get_current_user_id 
 
 router = APIRouter(prefix="/offers", tags=["offers"])
 
+# --- SCHEMA (Definido aqui para evitar erro de import) ---
+class AcceptOfferResponse(BaseModel):
+    status: str
+    offer_id: int
+    user_id: Optional[int] = None
+    expires_at: Optional[datetime] = None
+    qr_token: Optional[UUID] = None
+    accepted_count: Optional[int] = 0
+    accept_limit: Optional[int] = 0
+
+# --- TAREFA DE ANALYTICS (Reaproveitada) ---
+async def log_analytics_task(offer_id: int, user_id: int, event: str):
+    async with AsyncSessionLocal() as session:
+        try:
+            await session.execute(
+                text("""
+                    INSERT INTO offer_analytics (offer_id, user_id, event_type)
+                    VALUES (:oid, :uid, :evt)
+                """),
+                {"oid": offer_id, "uid": user_id, "evt": event}
+            )
+            await session.commit()
+            print(f"[Analytics] {event} registrado para Oferta {offer_id}")
+        except Exception as e:
+            print(f"[Analytics Error] {e}")
+
+# --- O ENDPOINT PRINCIPAL ---
 @router.post("/{offer_id}/accept", response_model=AcceptOfferResponse)
 async def accept_offer(
     offer_id: int,
+    background_tasks: BackgroundTasks, # <--- INJEÇÃO DO ANALYTICS
     db: AsyncSession = Depends(get_db_session),
     user_id: int = Depends(get_current_user_id),
 ) -> AcceptOfferResponse:
     now = datetime.now(timezone.utc)
 
-    # 1) user check
+    # 1) User check (Bloqueio e Cooldown)
     user_row = (await db.execute(
         text("SELECT is_blocked, cooldown_until FROM users WHERE id = :uid"),
         {"uid": user_id},
@@ -33,7 +64,7 @@ async def accept_offer(
     if user_row["cooldown_until"] is not None and user_row["cooldown_until"] > now:
         return AcceptOfferResponse(status="COOLDOWN", offer_id=offer_id)
 
-    # 2) must be targeted
+    # 2) Must be targeted (Verificação de segurança)
     target = (
         await db.execute(
             text("""
@@ -49,7 +80,8 @@ async def accept_offer(
     if not target:
         return AcceptOfferResponse(status="OFFER_NOT_ELIGIBLE", offer_id=offer_id, user_id=user_id)
 
-    # 3) lock offer row (this is the FCFS part)
+    # 3) Lock offer row (CRÍTICO: Evita Overselling)
+    # O 'FOR UPDATE' aqui trava essa linha até o commit final
     offer = (await db.execute(
         text("""
             SELECT id, status, end_at, accept_limit, accepted_count, accept_ttl_hours
@@ -75,7 +107,7 @@ async def accept_offer(
             accept_limit=accept_limit,
         )
 
-    # 4) if already claimed, return it
+    # 4) If already claimed, return it (Idempotência)
     existing = (await db.execute(
         text("""
             SELECT status, expires_at, qr_token
@@ -98,7 +130,7 @@ async def accept_offer(
             )
         return AcceptOfferResponse(status="CLOSED", offer_id=offer_id)
 
-    # 5) insert claim
+    # 5) Insert claim
     ttl_hours = int(offer["accept_ttl_hours"] or 6)
     expires_at = min(offer["end_at"], now + timedelta(hours=ttl_hours))
     qr_token = uuid4()
@@ -116,7 +148,7 @@ async def accept_offer(
     )).first()
 
     if not inserted:
-        # someone inserted concurrently
+        # Race condition handling (alguém inseriu no meio tempo)
         existing2 = (await db.execute(
             text("""
                 SELECT status, expires_at, qr_token
@@ -138,13 +170,16 @@ async def accept_offer(
             )
         return AcceptOfferResponse(status="CLOSED", offer_id=offer_id)
 
-    # 6) increment counter (still under the offer lock)
+    # 6) Increment counter (Update seguro dentro do lock)
     await db.execute(
         text("UPDATE offers SET accepted_count = accepted_count + 1 WHERE id = :oid"),
         {"oid": offer_id},
     )
 
     await db.commit()
+    
+    # 7) Analytics (Background Task - não trava o retorno)
+    background_tasks.add_task(log_analytics_task, offer_id, user_id, "CLAIM")
 
     return AcceptOfferResponse(
         status="ACCEPTED",
