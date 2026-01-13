@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 from typing import Dict
+from datetime import datetime
+from uuid import UUID
 
 class DashboardStatsResponse(BaseModel):
     active_offers_count: int
