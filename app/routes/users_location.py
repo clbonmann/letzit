@@ -9,7 +9,7 @@ try:
     from app.deps import get_current_user_id
 except ImportError:
     # Fallback caso o arquivo se chame dependencies
-    from app.dependencies import get_current_user_id
+    from app.deps_user import get_current_user_id
 
 from app.db import get_db_session # Verifique se esse import bate com seu projeto
 
