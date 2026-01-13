@@ -182,7 +182,8 @@ async def accept_offer(
         accepted_count=accepted_count + 1,
         accept_limit=accept_limit,
     )
-    @router.get("/map-source")
+    
+@router.get("/map-source")
 async def get_offers_map_source(
     db: AsyncSession = Depends(get_db_session)
 ):
