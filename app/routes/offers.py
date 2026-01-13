@@ -10,18 +10,10 @@ from pydantic import BaseModel
 from app.db import get_db_session, AsyncSessionLocal
 # Ajuste o import abaixo se seu arquivo de auth tiver outro nome (ex: app.deps_user)
 from app.deps import get_current_user_id 
-
+from app.schemas.offer import (
+    AcceptOfferResponse
+)
 router = APIRouter(prefix="/offers", tags=["offers"])
-
-# --- SCHEMA (Definido aqui para evitar erro de import) ---
-class AcceptOfferResponse(BaseModel):
-    status: str
-    offer_id: int
-    user_id: Optional[int] = None
-    expires_at: Optional[datetime] = None
-    qr_token: Optional[UUID] = None
-    accepted_count: Optional[int] = 0
-    accept_limit: Optional[int] = 0
 
 # --- TAREFA DE ANALYTICS (Reaproveitada) ---
 async def log_analytics_task(offer_id: int, user_id: int, event: str):
