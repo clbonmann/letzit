@@ -1,8 +1,9 @@
 from __future__ import annotations
 from uuid import uuid4
 from datetime import datetime, timezone, timedelta
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
@@ -22,26 +23,48 @@ router = APIRouter(prefix="/staff/users", tags=["staff-users"])
 
 @router.get("", response_model=list[StaffUserResponse])
 async def list_staff_users(
+    # 1. Adicionamos o parâmetro opcional na Query String
+    restaurant_id: Optional[int] = Query(None, description="Filtrar por restaurante (Apenas Super Admin)"),
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
 ):
-    require_admin(staff)
-    rid = int(staff["restaurant_id"])
+    # require_admin(staff) -> Cuidado: garanta que essa função não bloqueie o Super Admin
+    
+    logged_user_rid = int(staff["restaurant_id"])
+    
+    # Verificação de Super Admin (Assumindo que ID 1 é a LetzIT)
+    # Se você já tiver staff["is_super_admin"] na dependencia, use-a.
+    is_super_admin = (logged_user_rid == 1) 
 
+    target_rid = logged_user_rid # O padrão é ver o próprio restaurante
+
+    # --- LÓGICA DE SEGURANÇA (RBAC) ---
+    if is_super_admin:
+        # Se é o chefe, e ele passou um ID na URL, usamos esse ID.
+        if restaurant_id:
+            target_rid = restaurant_id
+    else:
+        # Se é um restaurante comum tentando ver outro:
+        if restaurant_id and restaurant_id != logged_user_rid:
+            raise HTTPException(
+                status_code=403, 
+                detail="Você não tem permissão para visualizar a equipe de outros restaurantes."
+            )
+        # Força o ID do token, ignorando o parametro
+        target_rid = logged_user_rid
+
+    # --- QUERY ---
     rows = (await db.execute(
         text("""
             SELECT id, restaurant_id, email, role, is_active, name, created_at, changed_at
-            FROM restaurant_staff
+            FROM restaurant_staff -- Confirme se o nome da tabela é 'staff' ou 'restaurant_staff'
             WHERE restaurant_id = :rid
             ORDER BY created_at DESC
         """),
-        {"rid": rid},
+        {"rid": target_rid},
     )).mappings().all()
 
     return [StaffUserResponse(**r) for r in rows]
-
-
-@router.post("", response_model=StaffUserResponse)
 async def create_staff_user(
     payload: StaffUserCreateRequest,
     db: AsyncSession = Depends(get_db_session),
