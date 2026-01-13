@@ -24,8 +24,8 @@ class RestaurantRegistryItem(BaseModel):
     address_zip: str | None = None
     address_country: str | None = None
     logo_url: Optional[str] = None
-    lat: float
-    long: float
+    lat: Optional[float] = None
+    long: Optional[float] = None
     
 @router.get("/registry", response_model=list[RestaurantRegistryItem])
 async def list_restaurants_registry(
