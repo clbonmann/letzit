@@ -28,6 +28,7 @@ async def home_featured(city: str, db: AsyncSession = Depends(get_db_session)):
            AND o.end_at > now()
            AND o.status = 'ACTIVE'
            AND r.city = :city
+           AND o.accepted_count < o.accept_limit
         ORDER BY o.created_at DESC
         LIMIT 5
         """),
