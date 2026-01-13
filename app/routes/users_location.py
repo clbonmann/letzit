@@ -4,8 +4,9 @@ from sqlalchemy import text
 
 # Importe sua função de segurança que decodifica o token
 # (O nome pode variar, verifique onde você definiu oauth2_scheme)
-from core.security import get_current_user       # Remova o "app."
+from security import get_current_user       # Remova o "app."
 from schemas.location import LocationUpdateSchema # Remova o "app."
+from app.deps import get_current_user_id
 
 router = APIRouter()
 
@@ -13,14 +14,7 @@ router = APIRouter()
 async def update_user_location(
     location_data: LocationUpdateSchema,
     
-    # AQUI ESTÁ A MÁGICA:
-    # O FastAPI vai pegar o token do Header, validar e te entregar o objeto user
-    current_user = Depends(get_current_user), 
-    
-    db: AsyncSession = Depends(get_db_session)
-):
-    # Agora temos certeza de quem é o usuário
-    user_id = current_user.id 
+    user_id: int = Depends(get_current_user_id),
 
     # Se você estiver atualizando a tabela de usuários diretamente:
     await db.execute(
