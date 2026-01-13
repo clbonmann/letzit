@@ -65,6 +65,8 @@ async def list_staff_users(
     )).mappings().all()
 
     return [StaffUserResponse(**r) for r in rows]
+    
+@router.post("", response_model=StaffUserResponse)    
 async def create_staff_user(
     payload: StaffUserCreateRequest,
     db: AsyncSession = Depends(get_db_session),
