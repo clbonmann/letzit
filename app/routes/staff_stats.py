@@ -35,7 +35,7 @@ async def get_today_stats(
     kpi_query = text("""
         SELECT 
             -- Total aceites hoje (claims criados hoje)
-            COUNT(*) FILTER (WHERE c.created_at >= CURRENT_DATE) as accepted_today,
+            COUNT(*) FILTER (WHERE c.accepted_at >= CURRENT_DATE) as accepted_today,
             
             -- Total validados hoje (claims queimados hoje)
             COUNT(*) FILTER (WHERE c.redeemed_at >= CURRENT_DATE) as redeemed_today,
@@ -43,8 +43,7 @@ async def get_today_stats(
             -- No-Shows de hoje (Criados hoje + Expirados hoje + Status do CLAIM é ACCEPTED)
             COUNT(*) FILTER (
                 WHERE c.created_at >= CURRENT_DATE 
-                AND c.expires_at < NOW() 
-                AND c.status = 'ACCEPTED' -- <--- AQUI ESTAVA O ERRO (Agora é c.status)
+                AND c.status = 'NO_SHOW' 
             ) as no_shows_today
             
         FROM offer_claims c
