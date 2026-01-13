@@ -24,9 +24,9 @@ class Settings(BaseSettings):
     JWT_ALG: str = "HS256"
 
     #Cloudinary
-    CLOUDINARY_API_KEY:  str | None = None
-    CLOUDINARY_API_SECRET: str | None = None
-    CLOUDINARY_CLOUD_NAME:  str | None = None
+    CLOUDINARY_API_KEY:  str
+    CLOUDINARY_API_SECRET: str
+    CLOUDINARY_CLOUD_NAME:  str
     
     @property
     def celery_broker(self) -> str:
