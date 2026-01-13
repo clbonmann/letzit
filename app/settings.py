@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     JWT_EXPIRES_MIN: int = 60 * 24  # 24 horas
     JWT_ALG: str = "HS256"
 
+    #Cloudinary
+    CLOUDINARY_API_KEY:  str | None = None
+    CLOUDINARY_API_SECRET: str | None = None
+    CLOUDINARY_CLOUD_NAME:  str | None = None
+    
     @property
     def celery_broker(self) -> str:
         return self.CELERY_BROKER_URL or self.REDIS_URL
