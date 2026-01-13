@@ -32,9 +32,20 @@ async def list_restaurants_registry(
         rows = (await db.execute(
             text("""
                 SELECT id,
-                       name,
-                       cnpj,
-                       NULLIF(COALESCE(city, ''), '') AS city
+                     name, 
+                     created_at, 
+                     geog, 
+                     NULLIF(COALESCE(city, ''), '') AS city, 
+                     cnpj, 
+                     address_street, 
+                     address_number,
+                     address_district,
+                     address_city, 
+                     address_state, 
+                     address_zip, 
+                     address_country, 
+                     logo_url, 
+                     updated_at
                 FROM restaurants
                 ORDER BY id DESC
             """)
@@ -45,10 +56,21 @@ async def list_restaurants_registry(
     rid = int(staff["restaurant_id"])
     row = (await db.execute(
         text("""
-            SELECT id,
-                   name,
-                   cnpj,
-                   NULLIF(COALESCE(city, ''), '') AS city
+            SELECT   id,
+                     name, 
+                     created_at, 
+                     geog, 
+                     NULLIF(COALESCE(city, ''), '') AS city, 
+                     cnpj, 
+                     address_street, 
+                     address_number,
+                     address_district,
+                     address_city, 
+                     address_state, 
+                     address_zip, 
+                     address_country, 
+                     logo_url, 
+                     updated_at
             FROM restaurants
             WHERE id = :rid
         """),
