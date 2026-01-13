@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -24,9 +25,9 @@ class Settings(BaseSettings):
     JWT_ALG: str = "HS256"
 
     #Cloudinary
-    CLOUDINARY_API_KEY: str
-    CLOUDINARY_API_SECRET: str
-    CLOUDINARY_CLOUD_NAME: str
+    CLOUDINARY_CLOUD_NAME: Optional[str] = None
+    CLOUDINARY_API_KEY: Optional[str] = None
+    CLOUDINARY_API_SECRET: Optional[str] = None
     
     @property
     def celery_broker(self) -> str:
