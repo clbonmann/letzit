@@ -17,66 +17,36 @@ async def run_no_show_job(
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
 ):
-    """
-    Executa job de NO-SHOW manualmente / via cron
-    Protegido por staff auth
-    """
-    # opcional: só admin
     if staff["role"] != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
+        raise HTTPException(status_code=403, detail="Admin only")
 
-    now = datetime.now(timezone.utc)
-    processed = 0
-
-    rows = (await db.execute(
-        text("""
-            SELECT id, user_id
-            FROM offer_claims
+    # CTE (Common Table Expression) para fazer tudo de uma vez
+    query = text("""
+        WITH expired_claims AS (
+            UPDATE offer_claims
+            SET status = 'NO_SHOW', penalty_applied_at = now()
             WHERE status = 'ACCEPTED'
-              AND expires_at < :now
-        """),
-        {"now": now},
-    )).mappings().all()
-
-    for row in rows:
-        claim_id = int(row["id"])
-        user_id = int(row["user_id"])
-
-        await db.execute(
-            text("""
-                UPDATE offer_claims
-                SET status = 'NO_SHOW',
-                    penalty_applied_at = :now
-                WHERE id = :cid
-            """),
-            {"now": now, "cid": claim_id},
+              AND expires_at < now()
+            RETURNING user_id
+        ),
+        updated_stats AS (
+            INSERT INTO user_stats (user_id, no_show_count)
+            SELECT user_id, 1 FROM expired_claims
+            ON CONFLICT (user_id) 
+            DO UPDATE SET no_show_count = user_stats.no_show_count + 1
+            RETURNING user_id
         )
+        UPDATE users u
+        SET 
+            reputation = GREATEST(0, reputation - 20),
+            cooldown_until = now() + interval '24 hours'
+        FROM updated_stats us
+        WHERE u.id = us.user_id;
+    """)
 
-        await db.execute(
-            text("""
-                UPDATE user_stats
-                SET no_show_count = no_show_count + 1
-                WHERE user_id = :uid
-            """),
-            {"uid": user_id},
-        )
-
-        await db.execute(
-            text("""
-                UPDATE users
-                SET reputation = GREATEST(0, reputation - :penalty),
-                    cooldown_until = :cooldown
-                WHERE id = :uid
-            """),
-            {
-                "uid": user_id,
-                "penalty": NO_SHOW_REPUTATION_PENALTY,
-                "cooldown": now + timedelta(hours=NO_SHOW_COOLDOWN_HOURS),
-            },
-        )
-
-        processed += 1
-
+    result = await db.execute(query)
+    # O rowcount aqui retorna quantas linhas foram afetadas no último update (users)
+    processed = result.rowcount 
+    
     await db.commit()
-
     return {"processed_no_shows": processed}
