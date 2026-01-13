@@ -1,10 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-
-# Importe sua função de segurança que decodifica o token
-# (O nome pode variar, verifique onde você definiu oauth2_scheme)
-from security import get_current_user       # Remova o "app."
 from schemas.location import LocationUpdateSchema # Remova o "app."
 from app.deps import get_current_user_id
 
