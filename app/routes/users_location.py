@@ -1,21 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
 from pydantic import BaseModel
-
-# Tenta importar do deps.py. 
-# Se seu arquivo tiver outro nome (ex: dependencies), AJUSTE AQUI.
-try:
-    from app.deps import get_current_user_id
-except ImportError:
-    # Fallback caso o arquivo se chame dependencies
-    from app.deps_user import get_current_user_id
-
-from app.db import get_db_session # Verifique se esse import bate com seu projeto
+from app.deps import get_current_user_id
+from app.settings import settings
 
 router = APIRouter()
 
-# Schema definido aqui para evitar erro de "Module not found"
+# --- Conexão local mantida para evitar erro de 'ModuleNotFoundError' ---
+engine = create_async_engine(settings.DATABASE_URL, echo=False)
+async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+async def get_db_session_local() -> AsyncSession:
+    async with async_session() as session:
+        yield session
+# -----------------------------------------------------------------------
+
 class LocationUpdateSchema(BaseModel):
     latitude: float
     longitude: float
@@ -24,11 +25,10 @@ class LocationUpdateSchema(BaseModel):
 async def update_location(
     location_data: LocationUpdateSchema,
     user_id: int = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session_local)
 ):
-    # Debug no Log do Railway
-    print(f"Update location for User ID: {user_id}")
-await db.execute(
+    # Query corrigida com as colunas 'geog' e 'last_loc_at'
+    await db.execute(
         text("""
             UPDATE users 
             SET 
@@ -37,8 +37,8 @@ await db.execute(
             WHERE id = :uid
         """),
         {
-            "lat": location_data.latitude,   # Y
-            "long": location_data.longitude, # X (PostGIS pede Longitude primeiro)
+            "lat": location_data.latitude,
+            "long": location_data.longitude,
             "uid": user_id
         }
     )
