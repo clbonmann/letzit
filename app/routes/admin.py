@@ -20,7 +20,6 @@ from app.schemas.admin import (
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-
 @router.post("/users", response_model=CreateUserResponse)
 async def create_user(
     payload: CreateUserRequest,
@@ -119,62 +118,56 @@ async def create_offer(
 
 
 @router.post("/offers/{offer_id}/targets")
-async def add_targets(offer_id: int, payload: AddTargetsRequest, db: AsyncSession = Depends(get_db_session)) -> dict:
-    offer = (await db.execute(text("SELECT id FROM offers WHERE id = :oid"), {"oid": offer_id})).first()
-    if not offer:
+async def add_targets(
+    offer_id: int, 
+    payload: AddTargetsRequest, 
+    db: AsyncSession = Depends(get_db_session)
+) -> dict:
+    # 1. Validação rápida
+    offer_exists = (await db.execute(text("SELECT 1 FROM offers WHERE id = :oid"), {"oid": offer_id})).scalar()
+    if not offer_exists:
         raise HTTPException(status_code=404, detail="Offer not found")
 
-    # pega apenas users existentes
-    existing_users = (await db.execute(
-        text("SELECT id FROM users WHERE id = ANY(:ids)"),
-        {"ids": payload.user_ids},
-    )).scalars().all()
-    existing_users = set(existing_users)
-
-    missing = [uid for uid in payload.user_ids if uid not in existing_users]
-   
-    # insere só os existentes
-    for uid in existing_users:
+    # 2. Bulk Insert usando UNNEST (Magia do Postgres)
+    # Inserimos tudo de uma vez, ignorando duplicatas (ON CONFLICT DO NOTHING)
+    # E retornamos quem foi inserido de fato.
+    result = await db.execute(
+        text("""
+            INSERT INTO offer_targets (offer_id, user_id, batch_no, state, released_at)
+            SELECT :oid, u.id, :batch, :state, now()
+            FROM users u
+            WHERE u.id = ANY(:user_ids)
+            ON CONFLICT (offer_id, user_id) DO NOTHING
+            RETURNING user_id
+        """),
+        {
+            "oid": offer_id,
+            "user_ids": payload.user_ids, # Passamos o array direto pro Postgres
+            "batch": payload.batch_no,
+            "state": payload.state
+        }
+    )
+    inserted_ids = result.scalars().all()
+    
+    # 3. Atualiza o status da oferta se necessário (Atômico)
+    if inserted_ids:
         await db.execute(
             text("""
-                INSERT INTO offer_targets (offer_id, user_id, batch_no, state)
-                VALUES (:oid, :uid, :batch, :state)
-                ON CONFLICT (offer_id, user_id) DO NOTHING
+               UPDATE offers SET status = 'ACTIVE' 
+               WHERE id = :oid AND status = 'CREATED'
             """),
-            {"oid": offer_id, "uid": uid, "batch": payload.batch_no, "state": payload.state},
+            {"oid": offer_id}
         )
-
+    
     await db.commit()
 
-    count_targets = (await db.execute(
-        text("SELECT COUNT(*) FROM offer_targets WHERE offer_id = :oid"),
-        {"oid": offer_id},
-    )).scalar_one()
-    
-     # altera o status da oferta na tabela offers
-    await db.execute(
-        text("""
-           UPDATE offers o
-           SET status = 'ACTIVE'
-           WHERE o.id = :offer_id
-           AND o.status = 'CREATED'
-           AND EXISTS (
-             SELECT 1
-             FROM offer_targets t
-             WHERE t.offer_id = o.id
-             AND t.released_at IS NOT NULL)
-          """),
-         {"offer_id": offer_id},
-     )
-    await db.commit()
-    
     return {
         "ok": True,
         "offer_id": offer_id,
-        "targets_total": int(count_targets),
-        "missing_user_ids": missing,
+        "targets_added": len(inserted_ids),
+        "requested_count": len(payload.user_ids)
     }
-
+    
 class CreateStaffRequest(BaseModel):
     restaurant_id: int
     email: EmailStr
