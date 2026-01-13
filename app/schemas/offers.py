@@ -1,7 +1,7 @@
 from datetime import datetime
 from pydantic import BaseModel
 from uuid import UUID
-
+from typing import Optional
 
 class AcceptOfferResponse(BaseModel):
     status: str  # ACCEPTED | SOLD_OUT | NOT_ELIGIBLE | CLOSED | COOLDOWN | BLOCKED
