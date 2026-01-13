@@ -1,18 +1,34 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from schemas.location import LocationUpdateSchema # Remova o "app."
-from app.deps import get_current_user_id
+from pydantic import BaseModel
+
+# Tenta importar do deps.py. 
+# Se seu arquivo tiver outro nome (ex: dependencies), AJUSTE AQUI.
+try:
+    from app.deps import get_current_user_id
+except ImportError:
+    # Fallback caso o arquivo se chame dependencies
+    from app.dependencies import get_current_user_id
+
+from app.database import get_db_session # Verifique se esse import bate com seu projeto
 
 router = APIRouter()
 
-@router.put("/location") # ou POST, dependendo da sua definição
-async def update_user_location(
-    location_data: LocationUpdateSchema,
-    
-    user_id: int = Depends(get_current_user_id),
+# Schema definido aqui para evitar erro de "Module not found"
+class LocationUpdateSchema(BaseModel):
+    latitude: float
+    longitude: float
 
-    # Se você estiver atualizando a tabela de usuários diretamente:
+@router.put("/location")
+async def update_location(
+    location_data: LocationUpdateSchema,
+    user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session)
+):
+    # Debug no Log do Railway
+    print(f"Update location for User ID: {user_id}")
+
     await db.execute(
         text("""
             UPDATE users 
@@ -22,13 +38,9 @@ async def update_user_location(
         {
             "lat": location_data.latitude,
             "long": location_data.longitude,
-            "uid": user_id  # <--- Usa o ID do token, não o 1
+            "uid": user_id
         }
     )
-    
-    # OU, se você tem uma tabela separada de localizações (user_locations):
-    # Verifique se já existe localização para fazer UPDATE ou INSERT (Upsert)
-    
     await db.commit()
     
     return {"message": "Location updated", "user_id": user_id}
