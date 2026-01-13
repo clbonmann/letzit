@@ -11,7 +11,7 @@ except ImportError:
     # Fallback caso o arquivo se chame dependencies
     from app.dependencies import get_current_user_id
 
-from app.database import get_db_session # Verifique se esse import bate com seu projeto
+from app.db import get_db_session # Verifique se esse import bate com seu projeto
 
 router = APIRouter()
 
