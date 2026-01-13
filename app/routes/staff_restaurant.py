@@ -21,7 +21,7 @@ async def update_my_restaurant(
     staff: dict = Depends(get_current_staff),
 ) -> RestaurantResponse:
     
-    if staff["role"] = 'INTERNAL_ADMIN':
+    if staff["role"] == 'INTERNAL_ADMIN':
        rid = payload.(id)  
     else 
        int(staff["restaurant_id"])
