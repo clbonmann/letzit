@@ -2,6 +2,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 class RestaurantUpdateRequest(BaseModel):
+    id: int
     name: str | None = Field(default=None, max_length=120)
 
     cnpj: str | None = Field(default=None, description="14 digits, only numbers")
