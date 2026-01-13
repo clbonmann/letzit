@@ -8,7 +8,6 @@ StaffRole = Literal["INTERNAL_ADMIN", "CLIENT_ADMIN", "CLIENT_STAFF"]
 
 class StaffUserCreateRequest(BaseModel):
     email: EmailStr
-    password: str = Field(..., min_length=6, max_length=200)
     role: StaffRole = "CLIENT_STAFF"
     name: str | None = Field(default=None, max_length=120)
 
