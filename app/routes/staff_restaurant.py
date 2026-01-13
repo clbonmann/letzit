@@ -20,8 +20,9 @@ async def update_my_restaurant(
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
 ) -> RestaurantResponse:
-    #rid = int(staff["restaurant_id"])
-    rid = payload.(id)
+    
+    rid = payload.(id) if staff["role"] = 'INTERNAL_ADMIN' else int(staff["restaurant_id"])
+
     # carregar atual
     cur = (await db.execute(
         text("""
