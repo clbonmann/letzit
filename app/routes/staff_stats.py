@@ -34,17 +34,17 @@ async def get_today_stats(
     # Para produção ideal, deverias converter para o fuso do restaurante.
     kpi_query = text("""
         SELECT 
-            -- Total aceites hoje
-            COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) as accepted_today,
+            -- Total aceites hoje (claims criados hoje)
+            COUNT(*) FILTER (WHERE c.created_at >= CURRENT_DATE) as accepted_today,
             
-            -- Total validados hoje (Redeemed)
-            COUNT(*) FILTER (WHERE redeemed_at >= CURRENT_DATE) as redeemed_today,
+            -- Total validados hoje (claims queimados hoje)
+            COUNT(*) FILTER (WHERE c.redeemed_at >= CURRENT_DATE) as redeemed_today,
             
-            -- No-Shows de hoje (Criados hoje + Expirados hoje + Status ainda é ACCEPTED)
+            -- No-Shows de hoje (Criados hoje + Expirados hoje + Status do CLAIM é ACCEPTED)
             COUNT(*) FILTER (
-                WHERE created_at >= CURRENT_DATE 
-                AND expires_at < NOW() 
-                AND status = 'ACCEPTED'
+                WHERE c.created_at >= CURRENT_DATE 
+                AND c.expires_at < NOW() 
+                AND c.status = 'ACCEPTED' -- <--- AQUI ESTAVA O ERRO (Agora é c.status)
             ) as no_shows_today
             
         FROM offer_claims c
