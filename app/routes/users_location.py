@@ -28,16 +28,17 @@ async def update_location(
 ):
     # Debug no Log do Railway
     print(f"Update location for User ID: {user_id}")
-
-    await db.execute(
+await db.execute(
         text("""
             UPDATE users 
-            SET latitude = :lat, longitude = :long, updated_at = NOW()
+            SET 
+                geog = ST_SetSRID(ST_MakePoint(:long, :lat), 4326)::geography, 
+                last_loc_at = NOW()
             WHERE id = :uid
         """),
         {
-            "lat": location_data.latitude,
-            "long": location_data.longitude,
+            "lat": location_data.latitude,   # Y
+            "long": location_data.longitude, # X (PostGIS pede Longitude primeiro)
             "uid": user_id
         }
     )
