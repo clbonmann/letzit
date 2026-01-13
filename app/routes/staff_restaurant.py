@@ -20,8 +20,8 @@ async def update_my_restaurant(
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
 ) -> RestaurantResponse:
-    rid = int(staff["restaurant_id"])
-
+    #rid = int(staff["restaurant_id"])
+    rid = payload.(id)
     # carregar atual
     cur = (await db.execute(
         text("""
