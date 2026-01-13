@@ -180,8 +180,8 @@ async def create_staff(
     db: AsyncSession = Depends(get_db_session),
 ) -> dict:
     role = payload.role.strip().lower()
-    if role not in {"admin", "cashier"}:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="role must be admin or cashier")
+    if role not in {"INTERNAL_ADMIN", "CLIENT_ADMIN", "CLIENT_STAFF"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="role must be INTERNAL_ADMIN, CLIENT_ADMIN or CLIENT_STAFF")
 
     # valida restaurant
     r = (await db.execute(
