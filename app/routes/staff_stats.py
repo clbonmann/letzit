@@ -42,7 +42,7 @@ async def get_today_stats(
             
             -- No-Shows de hoje (Criados hoje + Expirados hoje + Status do CLAIM é ACCEPTED)
             COUNT(*) FILTER (
-                WHERE c.created_at >= CURRENT_DATE 
+                WHERE o.created_at >= CURRENT_DATE 
                 AND c.status = 'NO_SHOW' 
             ) as no_shows_today
             
