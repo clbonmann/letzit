@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4, UUID
 from typing import Optional
-
+import json
 from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -182,3 +182,53 @@ async def accept_offer(
         accepted_count=accepted_count + 1,
         accept_limit=accept_limit,
     )
+    @router.get("/map-source")
+async def get_offers_map_source(
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Retorna GeoJSON otimizado para renderização de Mapa e Clustering.
+    Traz apenas o necessário para o pino: ID, coords, ícone e cor.
+    """
+    
+    # Usamos ST_AsGeoJSON do PostGIS para o banco já montar o JSON
+    # Isso é MUITO mais rápido que montar dicionários no Python
+    query = text("""
+        SELECT json_build_object(
+            'type', 'FeatureCollection',
+            'features', json_agg(ST_AsGeoJSON(t.*)::json)
+        )
+        FROM (
+            SELECT 
+                ST_SetSRID(ST_MakePoint(ST_X(r.geog::geometry), ST_Y(r.geog::geometry)), 4326) as geometry,
+                json_build_object(
+                    'offer_id', o.id,
+                    'title', o.title,
+                    'price_cents', o.price_cents,
+                    'restaurant_name', r.name,
+                    'logo_url', r.logo_url,
+                    'type', o.placement, -- 'NORMAL' ou 'CITY_HOME'
+                    'color', CASE 
+                        WHEN o.placement = 'CITY_HOME' THEN '#FFD700' -- Dourado
+                        ELSE '#FF5733' -- Laranja padrão
+                    END
+                ) as properties
+            FROM offers o
+            JOIN restaurants r ON r.id = o.restaurant_id
+            WHERE o.status = 'ACTIVE'
+              AND o.end_at > NOW()
+              AND o.accepted_count < o.accept_limit
+        ) as t;
+    """)
+
+    result = await db.execute(query)
+    geojson_data = result.scalar()
+
+    # Se não tiver ofertas, retorna estrutura vazia válida
+    if not geojson_data:
+        return {
+            "type": "FeatureCollection",
+            "features": []
+        }
+
+    return geojson_data
