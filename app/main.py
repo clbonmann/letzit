@@ -26,6 +26,7 @@ from app.routes.staff_restaurant_registry import router as staff_restaurant_regi
 from app.routes.staff_users_password import router as staff_users_password_router
 from app.routes.staff_activate import router as staff_activate_router
 from app.routes.auth_users import router as auth_users_router
+from app.routes.staff_stats import router as staff_stats_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -57,6 +58,7 @@ app.include_router(staff_restaurant_registry_router)
 app.include_router(staff_users_password_router)
 app.include_router(staff_activate_router)
 app.include_router(auth_users_router)
+app.include_router(staff_stats_router)
 
 @app.get("/health")
 def health():
