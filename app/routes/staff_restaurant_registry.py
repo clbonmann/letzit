@@ -16,7 +16,16 @@ class RestaurantRegistryItem(BaseModel):
     name: str
     cnpj: str | None = None
     city: str | None = None
-
+    geog: str | None = None 
+    address_street: str | None = None
+    address_number: str | None = None
+    address_district: str | None = None
+    address_city: str | None = None
+    address_state: str | None = None
+    address_zip: str | None = None
+    address_country: str | None = None
+    logo_url: str | None = None
+    updated_at: str | None = None
 
 @router.get("/registry", response_model=list[RestaurantRegistryItem])
 async def list_restaurants_registry(
