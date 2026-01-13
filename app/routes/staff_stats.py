@@ -3,7 +3,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db_session
 from app.deps_staff import get_current_staff # Assumindo que é para o dono do restaurante
-
+from app.schemas.staff_stats import (
+    DashboardStatsResponse
+)
 router = APIRouter(prefix="/staff/stats", tags=["staff-dashboard"])
 
 @router.get("/today", response_model=DashboardStatsResponse)
