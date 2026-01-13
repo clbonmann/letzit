@@ -24,7 +24,8 @@ class RestaurantRegistryItem(BaseModel):
     address_zip: str | None = None
     address_country: str | None = None
     logo_url: str | None = None
-
+    geog: str | None = None
+    
 @router.get("/registry", response_model=list[RestaurantRegistryItem])
 async def list_restaurants_registry(
     db: AsyncSession = Depends(get_db_session),
@@ -49,7 +50,8 @@ async def list_restaurants_registry(
                      address_state, 
                      address_zip, 
                      address_country, 
-                     logo_url
+                     logo_url,
+                     geog
                 FROM restaurants
                 ORDER BY id DESC
             """)
@@ -71,7 +73,8 @@ async def list_restaurants_registry(
                      address_state, 
                      address_zip, 
                      address_country, 
-                     logo_url
+                     logo_url,
+                     geog
             FROM restaurants
             WHERE id = :rid
         """),
