@@ -16,7 +16,6 @@ class RestaurantRegistryItem(BaseModel):
     name: str
     cnpj: str | None = None
     city: str | None = None
-    geog: str | None = None 
     address_street: str | None = None
     address_number: str | None = None
     address_district: str | None = None
@@ -25,7 +24,6 @@ class RestaurantRegistryItem(BaseModel):
     address_zip: str | None = None
     address_country: str | None = None
     logo_url: str | None = None
-    updated_at: str | None = None
 
 @router.get("/registry", response_model=list[RestaurantRegistryItem])
 async def list_restaurants_registry(
@@ -42,8 +40,6 @@ async def list_restaurants_registry(
             text("""
                 SELECT id,
                      name, 
-                     created_at, 
-                     geog, 
                      NULLIF(COALESCE(city, ''), '') AS city, 
                      cnpj, 
                      address_street, 
@@ -53,8 +49,7 @@ async def list_restaurants_registry(
                      address_state, 
                      address_zip, 
                      address_country, 
-                     logo_url, 
-                     updated_at
+                     logo_url
                 FROM restaurants
                 ORDER BY id DESC
             """)
@@ -66,9 +61,7 @@ async def list_restaurants_registry(
     row = (await db.execute(
         text("""
             SELECT   id,
-                     name, 
-                     created_at, 
-                     geog, 
+                     name,  
                      NULLIF(COALESCE(city, ''), '') AS city, 
                      cnpj, 
                      address_street, 
@@ -78,8 +71,7 @@ async def list_restaurants_registry(
                      address_state, 
                      address_zip, 
                      address_country, 
-                     logo_url, 
-                     updated_at
+                     logo_url
             FROM restaurants
             WHERE id = :rid
         """),
