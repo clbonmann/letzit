@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from typing import Optional
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
 
@@ -23,9 +23,9 @@ class RestaurantRegistryItem(BaseModel):
     address_state: str | None = None
     address_zip: str | None = None
     address_country: str | None = None
-    logo_url: str | None = None
-    lat: str | None = None
-    long: str | None = None
+    logo_url: Optional[str] = None
+    lat: float
+    long: float
     
 @router.get("/registry", response_model=list[RestaurantRegistryItem])
 async def list_restaurants_registry(
