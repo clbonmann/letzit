@@ -8,14 +8,23 @@ from app.settings import settings
 
 router = APIRouter()
 
-# --- Conexão local mantida para evitar erro de 'ModuleNotFoundError' ---
-engine = create_async_engine(settings.DATABASE_URL, echo=False)
+# --- CORREÇÃO DA URL DO BANCO ---
+# O Railway manda "postgres://", mas o SQLAlchemy async precisa de "postgresql+asyncpg://"
+db_url = settings.DATABASE_URL
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif db_url.startswith("postgresql://") and "asyncpg" not in db_url:
+    # Caso venha postgresql:// mas sem o driver async
+    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+# Conexão usando a URL corrigida
+engine = create_async_engine(db_url, echo=False)
 async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 async def get_db_session_local() -> AsyncSession:
     async with async_session() as session:
         yield session
-# -----------------------------------------------------------------------
+# --------------------------------
 
 class LocationUpdateSchema(BaseModel):
     latitude: float
@@ -27,7 +36,7 @@ async def update_location(
     user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session_local)
 ):
-    # Query corrigida com as colunas 'geog' e 'last_loc_at'
+    # Query corrigida (PostGIS + Campos certos)
     await db.execute(
         text("""
             UPDATE users 
