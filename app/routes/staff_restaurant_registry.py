@@ -52,8 +52,8 @@ async def list_restaurants_registry(
                      address_zip, 
                      address_country, 
                      logo_url,
-                     ST_Y(geog::geometry) as latitude,
-                     ST_X(geog::geometry) as longitude
+                     ST_Y(geog::geometry) as lat,
+                     ST_X(geog::geometry) as long
                 FROM restaurants
                 ORDER BY id DESC
             """)
@@ -76,8 +76,8 @@ async def list_restaurants_registry(
                      address_zip, 
                      address_country, 
                      logo_url,
-                     ST_Y(geog::geometry) as latitude,
-                     ST_X(geog::geometry) as longitude
+                     ST_Y(geog::geometry) as lat,
+                     ST_X(geog::geometry) as long
             FROM restaurants
             WHERE id = :rid
         """),
