@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import random
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,11 +56,18 @@ async def request_code(
 
 @router.post("/login")
 async def login_user(
-    payload: LoginRequest,
+    # REMOVA: payload: LoginRequest
+    # ADICIONE: form_data para aceitar o que o Swagger envia
+    form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db_session)
 ):
     now = datetime.now(timezone.utc)
-    phone = payload.phone_e164.strip()
+    
+    # Mapeamento: O Swagger envia 'username', mas nós tratamos como 'telefone'
+    phone = form_data.username.strip() 
+    
+    # Mapeamento: O Swagger envia 'password', mas nós tratamos como 'código'
+    code_received = form_data.password.strip()
 
     # 1. Busca o código válido mais recente
     row = (await db.execute(
@@ -76,7 +84,8 @@ async def login_user(
     if not row:
         raise HTTPException(status_code=400, detail="No code requested")
     
-    if row["code"] != payload.code:
+    # Compara com o código que veio no campo 'password' do form_data
+    if row["code"] != code_received:
         raise HTTPException(status_code=400, detail="Invalid code")
         
     if row["expires_at"] < now:
@@ -111,10 +120,10 @@ async def login_user(
         )
         await db.commit()
 
-    # 3. Gera o Token JWT (igual ao do Staff, mas o subject é o ID do User)
+    # 3. Gera o Token JWT
     access_token = create_access_token(subject=str(user_id))
 
-    # Limpa os códigos usados (opcional, boa prática)
+    # Limpa os códigos usados
     await db.execute(
         text("DELETE FROM verification_codes WHERE phone_e164 = :phone"),
         {"phone": phone}
