@@ -1,35 +1,44 @@
-from datetime import datetime, timezone
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
-from sqlalchemy import text
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 
-from app.db import get_db_session
-from app.deps import get_current_user_id  # seu stub/header X-User-Id
+# Importe sua função de segurança que decodifica o token
+# (O nome pode variar, verifique onde você definiu oauth2_scheme)
+from app.core.security import get_current_user 
+from app.schemas.location import LocationUpdateSchema # Seu schema de entrada
 
-router = APIRouter(prefix="/users/me", tags=["users"])
+router = APIRouter()
 
-class UpdateLocationRequest(BaseModel):
-    lat: float = Field(..., ge=-90, le=90)
-    lng: float = Field(..., ge=-180, le=180)
-    accuracy_m: int | None = Field(default=None, ge=0, le=5000)
-
-@router.post("/location")
-async def update_location(
-    payload: UpdateLocationRequest,
-    db: AsyncSession = Depends(get_db_session),
-    user_id: int = Depends(get_current_user_id),
+@router.put("/location") # ou POST, dependendo da sua definição
+async def update_user_location(
+    location_data: LocationUpdateSchema,
+    
+    # AQUI ESTÁ A MÁGICA:
+    # O FastAPI vai pegar o token do Header, validar e te entregar o objeto user
+    current_user = Depends(get_current_user), 
+    
+    db: AsyncSession = Depends(get_db_session)
 ):
-    now = datetime.now(timezone.utc)
+    # Agora temos certeza de quem é o usuário
+    user_id = current_user.id 
+
+    # Se você estiver atualizando a tabela de usuários diretamente:
     await db.execute(
         text("""
-            UPDATE users
-            SET geog = ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
-                last_loc_at = :now,
-                loc_accuracy_m = :acc
+            UPDATE users 
+            SET latitude = :lat, longitude = :long, updated_at = NOW()
             WHERE id = :uid
         """),
-        {"lng": payload.lng, "lat": payload.lat, "now": now, "acc": payload.accuracy_m, "uid": user_id},
+        {
+            "lat": location_data.latitude,
+            "long": location_data.longitude,
+            "uid": user_id  # <--- Usa o ID do token, não o 1
+        }
     )
+    
+    # OU, se você tem uma tabela separada de localizações (user_locations):
+    # Verifique se já existe localização para fazer UPDATE ou INSERT (Upsert)
+    
     await db.commit()
-    return {"ok": True, "user_id": user_id, "last_loc_at": now}
+    
+    return {"message": "Location updated", "user_id": user_id}
