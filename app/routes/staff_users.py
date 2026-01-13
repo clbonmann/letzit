@@ -1,4 +1,6 @@
 from __future__ import annotations
+from uuid import uuid4
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
@@ -52,25 +54,33 @@ async def create_staff_user(
     if staff.get("role") != "INTERNAL_ADMIN" and payload.role == "INTERNAL_ADMIN":
         raise HTTPException(status_code=403, detail="Only INTERNAL_ADMIN can create INTERNAL_ADMIN")
 
-    ph = hash_password(payload.password)
+    ph = null()
 
     try:
         row = (await db.execute(
             text("""
-                INSERT INTO restaurant_staff (restaurant_id, email, password_hash, role, is_active, name)
-                VALUES (:rid, :email, :ph, :role, true, :name)
-                RETURNING id, restaurant_id, email, role, is_active, name, created_at, changed_at
-            """),
+              INSERT INTO restaurant_staff (
+              restaurant_id, email, ph, role, is_active, name,
+              activation_token, activation_expires_at
+              )
+              VALUES (:rid, :email, :ph, :role, false, :name, :tok, :exp)
+              RETURNING id, restaurant_id, email, role, is_active, name, created_at, changed_at
+             """),
             {
-                "rid": rid,
-                "email": str(payload.email).lower(),
-                "ph": ph,
-                "role": payload.role,
-                "name": payload.name,
-            },
-        )).mappings().first()
+             "rid": rid,
+             "email": str(payload.email).lower(),
+             "ph": ph,
+             "role": payload.role,
+             "name": payload.name,
+             "tok": str(token),
+             "exp": expires,
+           },
+           )
+        ).mappings().first()
 
         await db.commit()
+        # TODO: enviar email com link contendo token
+        # activation_link = f"{settings.STAFF_ACTIVATION_BASE_URL}?token={token}"
         return StaffUserResponse(**row)
 
     except IntegrityError:
