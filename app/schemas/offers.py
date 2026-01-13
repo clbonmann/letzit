@@ -4,7 +4,7 @@ from uuid import UUID
 
 
 class AcceptOfferResponse(BaseModel):
-    status: str
+    status: str  # ACCEPTED | SOLD_OUT | NOT_ELIGIBLE | CLOSED | COOLDOWN | BLOCKED
     offer_id: int
     user_id: Optional[int] = None
     expires_at: Optional[datetime] = None
