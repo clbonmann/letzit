@@ -28,7 +28,12 @@ class Settings(BaseSettings):
     CLOUDINARY_CLOUD_NAME: Optional[str] = None
     CLOUDINARY_API_KEY: Optional[str] = None
     CLOUDINARY_API_SECRET: Optional[str] = None
-    
+
+    #Resend
+    RESEND_API_KEY: str
+    RESEND_FROM: str
+    STAFF_ACTIVATION_BASE_URL: str  # ex: https://letzit.app/staff-activate
+
     @property
     def celery_broker(self) -> str:
         return self.CELERY_BROKER_URL or self.REDIS_URL
