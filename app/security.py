@@ -1,36 +1,38 @@
-import hashlib
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Any
+from typing import Any, Union, Optional
 from jose import jwt
 from passlib.context import CryptContext
 from app.settings import settings
 
+# Configuração do Hashing de Senha
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-def hash_password(password: str) -> str:
-   return pwd_context.hash(password)
-
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
+# Note: O erro no seu log procurava por 'hash_password', então mantive esse nome
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
 
-def create_access_token(subject: str | Any, expires_delta: Optional[timedelta] = None, extra_claims: dict = {}) -> str:
-    """
-    Gera o JWT. O parametro extra_claims permite injetar role e rid.
-    """
+def create_access_token(subject: Union[str, Any], expires_delta: Optional[timedelta] = None, extra_claims: dict = {}) -> str:
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        # Tenta usar ACCESS_TOKEN_EXPIRE_MINUTES, se não tiver usa padrão 60
+        minutes = getattr(settings, "ACCESS_TOKEN_EXPIRE_MINUTES", 60)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=minutes)
     
-    # Payload básico
     to_encode = {"exp": expire, "sub": str(subject)}
     
-    # Injeta os dados extras (rid, role) se existirem
+    # Injeta roles e rid se existirem
     if extra_claims:
         to_encode.update(extra_claims)
-        
-    encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET from fastapi import Depends, HTTPException, status
-
+    
+    # CORREÇÃO DA LINHA QUEBRADA:
+    # Usa settings.JWT_SECRET (ou SECRET_KEY) e o algoritmo definido
+    algorithm = getattr(settings, "JWT_ALG", "HS256")
+    secret = getattr(settings, "JWT_SECRET", settings.SECRET_KEY)
+    
+    encoded_jwt = jwt.encode(to_encode, secret, algorithm=algorithm)
+    
     return encoded_jwt
