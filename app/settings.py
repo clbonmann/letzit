@@ -30,9 +30,9 @@ class Settings(BaseSettings):
     CLOUDINARY_API_SECRET: Optional[str] = None
 
     #Resend
-    RESEND_API_KEY: str
-    RESEND_FROM: str
-    STAFF_ACTIVATION_BASE_URL: str  # ex: https://letzit.app/staff-activate
+    RESEND_API_KEY: Optional[str] = None
+    RESEND_FROM: Optional[str] = None
+    STAFF_ACTIVATION_BASE_URL: Optional[str] = None  # ex: https://letzit.app/staff-activate
 
     @property
     def celery_broker(self) -> str:
