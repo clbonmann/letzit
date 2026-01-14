@@ -99,3 +99,79 @@ async def offers_nearby(
         "count": len(rows),
         "items": rows,
     }
+    
+@router.get("/home")
+async def get_home_offers(
+    # Lat/Lon ainda são vitais para ordenar por conveniência, 
+    # mas não são o critério principal de "existência" da oferta.
+    lat: Optional[float] = Query(None),
+    lon: Optional[float] = Query(None),
+    uid: int = Depends(get_current_user_id), 
+    db: AsyncSession = Depends(get_db_session),
+):
+    """
+    O "Santo Graal" do App: As 5 ofertas exclusivas para o usuário.
+    Não é uma busca. É a revelação dos "Matches" feitos pelo sistema.
+    """
+
+    # Lógica de Origem (igual anterior, fallback para o banco)
+    if lat is not None and lon is not None:
+        origin_sql = "ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)"
+        params = {"uid": uid, "lat": lat, "lon": lon}
+    else:
+        origin_sql = "(SELECT geog FROM users WHERE id = :uid)"
+        params = {"uid": uid}
+
+    query = text(f"""
+        WITH user_loc AS (
+            SELECT {origin_sql}::geography AS geog
+        )
+        SELECT 
+            o.id,
+            o.restaurant_id,
+            r.name AS restaurant_name,
+            r.logo_url,
+            o.title,
+            o.message,   -- A mensagem personalizada do dono ("Ei Osvaldo, vem cá!")
+            o.price_cents,
+            o.original_price_cents,
+            o.end_at,
+            ST_Distance(u.geog, r.geog)::int AS distance_m
+            
+        FROM user_loc u
+        -- O CORAÇÃO DO SISTEMA: Só mostramos o que está na tabela de targets
+        JOIN offer_targets t ON t.user_id = :uid 
+        JOIN offers o ON o.id = t.offer_id
+        JOIN restaurants r ON r.id = o.restaurant_id
+        
+        WHERE 
+            t.released_at IS NOT NULL
+            AND t.used_at IS NULL -- Ainda não usou
+            AND o.status = 'ACTIVE'
+            AND o.end_at > NOW()
+            
+            -- Trava de segurança geográfica ampla (ex: 30km)
+            -- Só para garantir que não apareça algo impossível de ir.
+            AND ST_DWithin(u.geog, r.geog, 30000) 
+
+        -- A ORDENAÇÃO É A CHAVE DA EMOÇÃO:
+        -- 1. Placement 'HIGHLIGHT' (Se tiver destaque pago/premium)
+        -- 2. Recência (Acabou de ser convidado)
+        -- 3. Distância (Desempate)
+        ORDER BY 
+            o.placement DESC,      -- Normal vs Highlight
+            t.created_at DESC,     -- Os convites mais frescos primeiro
+            distance_m ASC         -- Mais perto
+            
+        LIMIT 5 -- A Regra de Ouro
+    """)
+
+    result = await db.execute(query, params)
+    rows = result.mappings().all()
+
+    return {
+        "title": "Seus Convites de Hoje",
+        "subtitle": "Estes restaurantes escolheram você.",
+        "count": len(rows),
+        "items": rows,
+    }
