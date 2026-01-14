@@ -31,7 +31,7 @@ def create_access_token(subject: str | Any, expires_delta: Optional[timedelta] =
     if extra_claims:
         to_encode.update(extra_claims)
         
-    encoded_jwt = jwt.encode(to_encode, settings.from fastapi import Depends, HTTPException, status
+    encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import jwt, JWTError
 from sqlalchemy import text
