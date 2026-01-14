@@ -31,7 +31,7 @@ def create_access_token(subject: Union[str, Any], expires_delta: Optional[timede
     # CORREÇÃO DA LINHA QUEBRADA:
     # Usa settings.JWT_SECRET (ou SECRET_KEY) e o algoritmo definido
     algorithm = getattr(settings, "JWT_ALG", "HS256")
-    secret = getattr(settings, "JWT_SECRET", settings.SECRET_KEY)
+    secret = getattr(settings, "JWT_SECRET")
     
     encoded_jwt = jwt.encode(to_encode, secret, algorithm=algorithm)
     
