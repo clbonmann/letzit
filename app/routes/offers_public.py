@@ -1,13 +1,14 @@
 from __future__ import annotations
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db_session
-from app.deps_user import get_current_user_id
-
-router = APIRouter(prefix="/offers", tags=["offers"])
-
+ 
+from app.deps_user import get_current_user_id 
+ 
+router = APIRouter(prefix="/client/offers", tags=["client-offers"])
+ 
 @router.get("/picks")
 async def get_picks(
     lat: Optional[float] = Query(None),
