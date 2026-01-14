@@ -12,4 +12,5 @@ pydantic[email]==2.12.0
 passlib==1.7.4
 cloudinary
 python-multipart
+httpx==0.27.2
 
