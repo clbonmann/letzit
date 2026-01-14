@@ -8,96 +8,120 @@ from app.deps_user import get_current_user_id
 
 router = APIRouter(prefix="/offers", tags=["offers"])
 
-@router.get("/nearby")
-async def offers_nearby(
-    # Parâmetros opcionais de GPS Real-time (O App manda se tiver)
-    lat: Optional[float] = Query(None, description="Latitude atual do usuário"),
-    lon: Optional[float] = Query(None, description="Longitude atual do usuário"),
-    
-    radius_km: int = 2,
-    limit: int = 50,
+@router.get("/picks")
+async def get_picks(
+    lat: Optional[float] = Query(None),
+    lon: Optional[float] = Query(None),
     uid: int = Depends(get_current_user_id), 
     db: AsyncSession = Depends(get_db_session),
 ):
-    # 1. Validações
-    if not (1 <= radius_km <= 50): # Aumentei um pouco para áreas rurais/subúrbio
-        raise HTTPException(400, "radius_km must be between 1 and 50")
+    """
+    Retorna os convites (Picks) do usuário.
+    Se o usuário for novo e não tiver convites, o sistema gera 5 agora mesmo.
+    """
 
-    radius_m = radius_km * 1000
-
-    # 2. Definição do Ponto de Origem (Dinâmico vs Banco)
-    # Se o front mandou lat/lon, criamos um ponto na hora.
-    # Se não mandou, pegamos do banco (users.geog).
-    
-    # Fragmento SQL para decidir a origem:
-    if lat is not None and lon is not None:
-        # Usa o GPS do celular agora
-        origin_sql = "ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)"
-        params = {"uid": uid, "radius_m": radius_m, "limit": limit, "lat": lat, "lon": lon}
-    else:
-        # Usa o último local conhecido no banco
-        origin_sql = "(SELECT geog FROM users WHERE id = :uid)"
-        params = {"uid": uid, "radius_m": radius_m, "limit": limit}
-
-    # 3. A Query
-    query = text(f"""
-        WITH user_loc AS (
-            SELECT {origin_sql}::geography AS geog
-        )
+    # 1. Tenta buscar os convites já existentes (Cache/Histórico)
+    query_existing = text("""
         SELECT 
             o.id,
             o.restaurant_id,
             r.name AS restaurant_name,
-            r.city AS restaurant_city,
-            r.logo_url,           -- Adicionei: Essencial para o Feed
+            r.logo_url,
             o.title,
             o.message,
             o.price_cents,
-            o.original_price_cents, -- Adicionei: Para mostrar o desconto (De: X Por: Y)
+            o.original_price_cents,
             o.end_at,
-            
-            -- Distância calculada em relação à origem definida acima
-            ST_Distance(u.geog, r.geog)::int AS distance_m
-            
-        FROM user_loc u
-        CROSS JOIN offer_targets t
+            t.created_at as invited_at
+        FROM offer_targets t
         JOIN offers o ON o.id = t.offer_id
         JOIN restaurants r ON r.id = o.restaurant_id
-        
         WHERE 
-            -- 1. Vínculo com usuário
             t.user_id = :uid 
-            AND t.released_at IS NOT NULL
-            AND t.used_at IS NULL  -- CRÍTICO: Não mostrar se já usou!
-            
-            -- 2. Validade da Oferta
-            AND o.placement = 'NORMAL'
+            AND t.used_at IS NULL -- Ainda não usou
             AND o.status = 'ACTIVE'
             AND o.end_at > NOW()
-            -- CRÍTICO: Não mostrar se já esgotou a quantidade global
-            AND (o.max_qty IS NULL OR o.claimed_count < o.max_qty)
-
-            -- 3. Filtro Geográfico (Raio do Usuário)
-            AND r.geog IS NOT NULL
-            AND ST_DWithin(u.geog, r.geog, :radius_m)
-            
-            -- 4. Filtro Geográfico (Raio do Restaurante)
-            -- Se o restaurante disse "só quero gente a 1km", respeitamos,
-            -- mesmo que o usuário tenha pedido raio de 20km.
-            AND ST_DWithin(u.geog, r.geog, o.radius_km * 1000)
-
-        ORDER BY distance_m ASC, o.created_at DESC
-        LIMIT :limit
+        ORDER BY t.created_at DESC
+        LIMIT 5
     """)
 
-    result = await db.execute(query, params)
+    result = await db.execute(query_existing, {"uid": uid})
     rows = result.mappings().all()
 
+    # ---------------------------------------------------------
+    # 2. LÓGICA DE "COLD START" (Usuário Novo / Sem Convites)
+    # ---------------------------------------------------------
+    if len(rows) == 0:
+        # Se não tem convites, vamos criar agora! 
+        # Precisamos da localização para isso.
+        
+        # Se o front não mandou lat/lon, pegamos do cadastro do user
+        if lat is None or lon is None:
+            user_geo = await db.execute(text("SELECT ST_Y(geog::geometry) as lat, ST_X(geog::geometry) as lon FROM users WHERE id=:uid"), {"uid": uid})
+            geo_row = user_geo.first()
+            if geo_row:
+                lat, lon = geo_row.lat, geo_row.lon
+            else:
+                # Se não tem geo nenhuma, retorna vazio mesmo
+                return {"title": "Sem convites", "items": []}
+
+        # Query mágica: Busca ofertas próximas, CRIA o target e RETORNA os dados
+        # Tudo numa tacada só para ser rápido.
+        query_instant_match = text("""
+            WITH new_matches AS (
+                INSERT INTO offer_targets (user_id, offer_id, released_at)
+                SELECT 
+                    :uid, 
+                    o.id, 
+                    NOW()
+                FROM offers o
+                JOIN restaurants r ON r.id = o.restaurant_id
+                WHERE 
+                    o.status = 'ACTIVE' 
+                    AND o.end_at > NOW()
+                    AND o.placement = 'NORMAL'
+                    AND ST_DWithin(
+                        r.geog, 
+                        ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 
+                        10000 -- Raio de 10km para garantir que ache algo
+                    )
+                ORDER BY 
+                    ST_Distance(r.geog, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)) ASC
+                LIMIT 5
+                ON CONFLICT DO NOTHING -- Evita erro se já existir (raro)
+                RETURNING offer_id, created_at
+            )
+            -- Agora seleciona os dados bonitos para exibir
+            SELECT 
+                o.id,
+                o.restaurant_id,
+                r.name AS restaurant_name,
+                r.logo_url,
+                o.title,
+                o.message,
+                o.price_cents,
+                o.original_price_cents,
+                o.end_at,
+                nm.created_at as invited_at
+            FROM new_matches nm
+            JOIN offers o ON o.id = nm.offer_id
+            JOIN restaurants r ON r.id = o.restaurant_id
+        """)
+
+        try:
+            result = await db.execute(query_instant_match, {"uid": uid, "lat": lat, "lon": lon})
+            await db.commit() # Importante commitar a criação dos targets
+            rows = result.mappings().all()
+        except Exception as e:
+            await db.rollback()
+            print(f"Erro no Instant Match: {e}")
+            rows = []
+
+    # 3. Retorno Final
     return {
-        "user_coords": {"lat": lat, "lon": lon} if lat else "database_fallback",
-        "radius_applied_km": radius_km,
+        "title": "Escolhidos para Você", # Título emocional
         "count": len(rows),
-        "items": rows,
+        "items": rows
     }
     
 @router.get("/home")
