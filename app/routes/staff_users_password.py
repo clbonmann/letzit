@@ -66,7 +66,7 @@ async def reset_staff_password(
     await db.execute(
         text("""
             UPDATE restaurant_staff
-            SET ph = :ph
+            SET password_hash = :ph
             WHERE id = :sid AND restaurant_id = :rid
         """),
         {"ph": new_hash, "sid": int(staff_id), "rid": rid},
