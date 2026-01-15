@@ -28,7 +28,7 @@ class AcceptOfferResponse(BaseModel):
 # --- BACKGROUND TASKS ---
 
 async def log_analytics_task(offer_id: int, user_id: int, event: str):
-    """Logs analytics events in background without blocking the response."""
+    """Registra eventos de analytics em background."""
     async with AsyncSessionLocal() as session:
         try:
             await session.execute(
@@ -45,20 +45,38 @@ async def log_analytics_task(offer_id: int, user_id: int, event: str):
 async def get_picks(
     lat: Optional[float] = Query(None),
     lon: Optional[float] = Query(None),
-    city_slug: Optional[str] = Query(None, description="Ex: sao_paulo"),
+    city_slug: Optional[str] = Query(None, description="Opcional. Se não vier, tentamos detectar via GPS."),
     uid: int = Depends(get_current_user_id), 
     db: AsyncSession = Depends(get_db_session),
 ):
     """
-    SMART FEED:
-    1. If `city_slug` is present -> Returns 'CITY_HOME' (Curated/Fixed offers).
-    2. Else -> Returns 'NORMAL' (Proximity/Picks offers).
-    3. If Cold Start -> Generates matches instantly.
+    FEED HÍBRIDO INTELIGENTE:
+    1. Tenta identificar a cidade (via parametro OU via GPS do usuário).
+    2. Se a cidade tiver ofertas 'CITY_HOME' (Destaques), mostra elas.
+    3. Se não tiver destaques (Interior/Cidade pequena), cai no modo 'PROXIMITY' e mostra o que tiver perto.
     """
     
-    # Strategy A: CITY_HOME (Curated Fixed List)
+    # --- 1. AUTO-DETECÇÃO DE CIDADE (Se não foi enviada) ---
+    # Truque: Em vez de pagar API de Geocoding do Google, olhamos qual o restaurante mais próximo.
+    # Assumimos que o usuário está na mesma cidade que o restaurante a 500m dele.
+    if not city_slug and lat and lon:
+        detect_city_query = text("""
+            SELECT r.city_slug 
+            FROM restaurants r
+            WHERE ST_DWithin(r.geog, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 20000) -- Raio 20km
+            ORDER BY ST_Distance(r.geog, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)) ASC
+            LIMIT 1
+        """)
+        city_row = (await db.execute(detect_city_query, {"lat": lat, "lon": lon})).mappings().first()
+        if city_row and city_row.city_slug:
+            city_slug = city_row.city_slug
+
+    # --- 2. ESTRATÉGIA A: CITY_HOME (Curadoria/Destaques) ---
+    # Só roda se temos uma cidade definida (enviada ou detectada)
     if city_slug:
+        # Normaliza string (sao paulo -> sao_paulo)
         city_norm = city_slug.strip().lower().replace(" ", "_").replace("-", "_")
+        
         city_query = text("""
             SELECT 
                 o.id, o.restaurant_id, r.name AS restaurant_name, r.logo_url,
@@ -69,23 +87,31 @@ async def get_picks(
             WHERE o.placement = 'CITY_HOME'
               AND o.status = 'ACTIVE'
               AND o.end_at > NOW()
-              -- Assuming you store city_slug or normalized city in DB
-              AND (r.city = :city OR r.city_slug = :city)
+              AND (r.city_slug = :city OR LOWER(r.city) = :city_space)
               AND o.accepted_count < o.accept_limit
             ORDER BY o.created_at DESC
             LIMIT 5
         """)
-        rows = (await db.execute(city_query, {"city": city_norm})).mappings().all()
         
+        # Tenta buscar usando slug ("sao_paulo") ou nome com espaço ("sao paulo")
+        rows = (await db.execute(city_query, {"city": city_norm, "city_space": city_norm.replace("_", " ")})).mappings().all()
+        
+        # SE achou ofertas de destaque, retorna elas e ENCERRA AQUI.
         if rows:
+            display_name = city_slug.replace('_', ' ').title()
             return {
                 "strategy": "CITY_HOME",
-                "title": f"Destaques de {city_slug.replace('_', ' ').title()}",
+                "title": f"Destaques em {display_name}",
                 "items": rows
             }
+            
+        # SE NÃO achou (ex: é uma cidade do interior sem destaques pagos),
+        # o código continua para baixo e cai na estratégia de Proximidade (Fallback).
 
-    # Strategy B: PROXIMITY (Picks)
-    # 1. Try to fetch existing invites
+    # --- 3. ESTRATÉGIA B: PROXIMITY (Picks / Interior) ---
+    # Busca ofertas ao redor, independentemente de ser destaque ou não.
+    
+    # 3.1. Tenta buscar convites já gerados (Matches anteriores)
     query_existing = text("""
         SELECT 
             o.id, o.restaurant_id, r.name AS restaurant_name, r.logo_url,
@@ -106,7 +132,7 @@ async def get_picks(
     result = await db.execute(query_existing, {"uid": uid})
     rows = result.mappings().all()
 
-    # 2. Cold Start Logic (Instant Match)
+    # 3.2. Cold Start / Instant Match (Se não tem nada cacheado)
     if not rows and lat and lon:
         instant_query = text("""
             WITH new_matches AS (
@@ -114,8 +140,10 @@ async def get_picks(
                 SELECT :uid, o.id, NOW()
                 FROM offers o
                 JOIN restaurants r ON r.id = o.restaurant_id
-                WHERE o.status = 'ACTIVE' AND o.end_at > NOW() AND o.placement = 'NORMAL'
-                AND ST_DWithin(r.geog, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 10000)
+                WHERE o.status = 'ACTIVE' 
+                  AND o.end_at > NOW() 
+                  AND o.placement = 'NORMAL' -- Pega ofertas normais
+                  AND ST_DWithin(r.geog, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 15000) -- Raio 15km
                 ORDER BY ST_Distance(r.geog, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)) ASC
                 LIMIT 5
                 ON CONFLICT DO NOTHING
@@ -135,14 +163,13 @@ async def get_picks(
             result = await db.execute(instant_query, {"uid": uid, "lat": lat, "lon": lon})
             await db.commit()
             rows = result.mappings().all()
-        except Exception as e:
+        except Exception:
             await db.rollback()
-            # Log error
             rows = []
 
     return {
         "strategy": "PROXIMITY",
-        "title": "Escolhidos para Você",
+        "title": "Próximos a Você", # Título genérico para interior/proximidade
         "items": rows
     }
 
@@ -150,8 +177,7 @@ async def get_picks(
 @router.get("/map-source")
 async def get_offers_map_source(db: AsyncSession = Depends(get_db_session)):
     """
-    Returns GeoJSON for Map View.
-    Includes only ACTIVE offers that are not sold out.
+    Retorna GeoJSON para o Mapa.
     """
     query = text("""
         SELECT json_build_object(
@@ -194,7 +220,7 @@ async def get_offer_details(
     db: AsyncSession = Depends(get_db_session),
 ):
     """
-    Full Offer Details.
+    Detalhes Completos da Oferta.
     """
     query = text("""
         SELECT 
@@ -211,12 +237,12 @@ async def get_offer_details(
     row = (await db.execute(query, {"oid": offer_id})).mappings().first()
     
     if not row:
-        raise HTTPException(404, "Offer not found")
+        raise HTTPException(404, "Oferta não encontrada")
         
     return row
 
 
-# --- WRITE ENDPOINTS (Actions) ---
+# --- WRITE ENDPOINTS (Ações) ---
 
 @router.post("/{offer_id}/accept", response_model=AcceptOfferResponse)
 async def accept_offer(
@@ -226,12 +252,12 @@ async def accept_offer(
     user_id: int = Depends(get_current_user_id),
 ):
     """
-    The "Grab Deal" Button.
-    Reserves the offer, generates a QR Code (Claim), and updates inventory.
+    Botão 'Pegar Oferta'.
+    Reserva, gera QR Code (Claim) e atualiza estoque.
     """
     now = datetime.now(timezone.utc)
 
-    # 1. User Safety Checks
+    # 1. Checagens do Usuário
     user_row = (await db.execute(
         text("SELECT is_blocked, cooldown_until FROM users WHERE id = :uid"),
         {"uid": user_id},
@@ -244,7 +270,7 @@ async def accept_offer(
     if user_row["cooldown_until"] is not None and user_row["cooldown_until"] > now:
         return AcceptOfferResponse(status="COOLDOWN", offer_id=offer_id)
 
-    # 2. Offer Availability Check (Locking)
+    # 2. Checagem da Oferta (Lock de Banco)
     offer = (await db.execute(
         text("""
             SELECT id, status, end_at, accept_limit, accepted_count, accept_ttl_hours
@@ -259,7 +285,7 @@ async def accept_offer(
     if int(offer["accepted_count"]) >= int(offer["accept_limit"]):
         return AcceptOfferResponse(status="SOLD_OUT", offer_id=offer_id, accepted_count=offer["accepted_count"], accept_limit=offer["accept_limit"])
 
-    # 3. Idempotency Check (Already claimed?)
+    # 3. Checagem de Duplicidade
     existing = (await db.execute(
         text("SELECT status, expires_at, qr_token FROM offer_claims WHERE offer_id = :oid AND user_id = :uid"),
         {"oid": offer_id, "uid": user_id},
@@ -274,7 +300,7 @@ async def accept_offer(
             )
         return AcceptOfferResponse(status="CLOSED", offer_id=offer_id)
 
-    # 4. Create Claim
+    # 4. Criação do Claim
     ttl = int(offer["accept_ttl_hours"] or 6)
     expires_at = min(offer["end_at"], now + timedelta(hours=ttl))
     qr_token = uuid4()
@@ -287,7 +313,7 @@ async def accept_offer(
         {"oid": offer_id, "uid": user_id, "now": now, "exp": expires_at, "qr": str(qr_token)}
     )
 
-    # 5. Update Inventory
+    # 5. Atualiza Estoque
     await db.execute(text("UPDATE offers SET accepted_count = accepted_count + 1 WHERE id = :oid"), {"oid": offer_id})
     await db.commit()
 
