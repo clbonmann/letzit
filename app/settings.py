@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "LetzIT"
 
     # Infra (Aqui estava o erro: Use ':' e não '=')
-    DATABASE_URL: str
-    REDIS_URL: str
+    DATABASE_URL: Optional[str] = None
+    REDIS_URL: Optional[str] = None
 
     # Authentication
     JWT_SECRET: str | None = None
