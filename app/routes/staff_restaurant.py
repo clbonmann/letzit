@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,44 +13,10 @@ from app.deps_staff import get_current_staff
 # Certifique-se que estes utilitários existem no seu projeto:
 from app.utils.cnpj import normalize_cnpj 
 from app.services.storage import upload_image 
+# IMPORTANDO SCHEMAS (Agora do lugar certo)
+from app.schemas.staff import RestaurantRead, RestaurantUpdate
 
 router = APIRouter(prefix="/staff/restaurant", tags=["staff-restaurant"])
-
-# --- SCHEMAS ---
-
-class RestaurantRead(BaseModel):
-    id: int
-    name: str
-    cnpj: str | None = None
-    city: str | None = None
-    address_street: str | None = None
-    address_number: str | None = None
-    address_district: str | None = None
-    address_city: str | None = None
-    address_state: str | None = None
-    address_zip: str | None = None
-    address_country: str | None = None
-    logo_url: Optional[str] = None
-    lat: Optional[float] = None
-    long: Optional[float] = None
-    
-    class Config:
-        orm_mode = True
-
-class RestaurantUpdate(BaseModel):
-    id: Optional[int] = None # Opcional para Staff, Obrigatório para Admin editar terceiros
-    name: Optional[str] = None
-    cnpj: Optional[str] = None
-    address_street: Optional[str] = None
-    address_number: Optional[str] = None
-    address_district: Optional[str] = None
-    address_city: Optional[str] = None
-    address_state: Optional[str] = None
-    address_zip: Optional[str] = None
-    address_country: Optional[str] = None
-    logo_url: Optional[str] = None 
-
-# --- ENDPOINTS ---
 
 @router.get("", response_model=List[RestaurantRead])
 async def list_my_restaurants(
