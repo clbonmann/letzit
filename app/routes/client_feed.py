@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException, BackgroundTasks
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db_session, AsyncSessionLocal
-from app.deps_user import get_current_user_id
+from app.deps_client import get_current_user_id
 # IMPORTANDO SCHEMAS
 from app.schemas.client import AcceptOfferResponse
 
