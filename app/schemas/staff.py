@@ -57,7 +57,7 @@ class UpdateStaffRequest(BaseModel):
     role: Optional[str] = None
     is_active: Optional[bool] = None
 
-# --- RESTAURANT PROFILE (O que faltava) ---
+# --- RESTAURANT PROFILE ---
 class RestaurantRead(BaseModel):
     id: int
     name: str
@@ -169,27 +169,6 @@ class RepeatOfferResponse(BaseModel):
     created_at: datetime
     end_at: datetime
 
-# --- STATS ---
-class DashboardStatsResponse(BaseModel):
-    total_revenue_cents: int
-    today_accepted: int
-    today_redeemed: int
-    today_no_shows: int
-    conversion_rate: float
-    active_offers_count: int
-    active_offers_breakdown: Dict[str, int]
-
-class AudienceBucket(BaseModel):
-    radius_km: int
-    user_count: int
-    label: str
-
-class AudienceStatsResponse(BaseModel):
-    total_nearby: int
-    active_window_minutes: int
-    breakdown: List[AudienceBucket]
-    computed_at: datetime
-
 # --- POS (REDEEM & NO SHOW) ---
 class RedeemStatus(str, Enum):
     VALID = "VALID"
@@ -221,4 +200,25 @@ class DebugAcceptRequest(BaseModel):
 class NoShowRequest(BaseModel):
     claim_id: Optional[int] = None
     qr_token: Optional[str] = None
+
+# --- STATS (ADICIONADO) ---
+class DashboardStatsResponse(BaseModel):
+    total_revenue_cents: int
+    today_accepted: int
+    today_redeemed: int
+    today_no_shows: int
+    conversion_rate: float
+    active_offers_count: int
+    active_offers_breakdown: Dict[str, int]
+
+class AudienceBucket(BaseModel):
+    radius_km: int
+    user_count: int
+    label: str
+
+class AudienceStatsResponse(BaseModel):
+    total_nearby: int
+    active_window_minutes: int
+    breakdown: List[AudienceBucket]
+    computed_at: datetime
 
