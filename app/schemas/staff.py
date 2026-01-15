@@ -57,6 +57,9 @@ class UpdateStaffRequest(BaseModel):
     role: Optional[str] = None
     is_active: Optional[bool] = None
 
+class AdminResetPasswordRequest(BaseModel):
+    new_password: str = Field(..., min_length=6)
+    
 # --- RESTAURANT PROFILE ---
 class RestaurantRead(BaseModel):
     id: int
