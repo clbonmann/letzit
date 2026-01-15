@@ -1,8 +1,19 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
 from typing import Optional
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
+
+# --- FORÇA O CARREGAMENTO DO .ENV ---
+# Isso garante que o Python leia o arquivo .env da raiz
+load_dotenv()
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Configuração para ler .env automaticamente também
+    model_config = SettingsConfigDict(
+        env_file=".env", 
+        env_file_encoding="utf-8", 
+        extra="ignore"
+    )
 
     # Ambiente
     ENV: str = "prod"
@@ -11,28 +22,28 @@ class Settings(BaseSettings):
     # App
     APP_NAME: str = "LetzIT"
 
-    # Infra
-    DATABASE_URL: str
-    REDIS_URL: str
+    # Infra (Obrigatórios - O erro estava aqui)
+    DATABASE_URL="postgresql://postgres:GdEb3ccAfgGabgC4g1b41GDGCE4AcDC6@centerbeam.proxy.rlwy.net:51248/railway"
+    REDIS_URL="redis://localhost:6379"
 
     # Celery
     CELERY_BROKER_URL: str | None = None
     CELERY_RESULT_BACKEND: str | None = None
 
-    #Authentication
-    JWT_SECRET: str | None = None
+    # Authentication
+    JWT_SECRET:str = "segredo_temporario_desenvolvimento_123"
     JWT_EXPIRES_MIN: int = 60 * 24  # 24 horas
     JWT_ALG: str = "HS256"
 
-    #Cloudinary
+    # Cloudinary
     CLOUDINARY_CLOUD_NAME: Optional[str] = None
     CLOUDINARY_API_KEY: Optional[str] = None
     CLOUDINARY_API_SECRET: Optional[str] = None
 
-    #Resend
+    # Resend
     RESEND_API_KEY: Optional[str] = None
     RESEND_FROM: Optional[str] = None
-    STAFF_ACTIVATION_BASE_URL: Optional[str] = None  # ex: https://letzit.app/staff-activate
+    STAFF_ACTIVATION_BASE_URL: Optional[str] = None
 
     @property
     def celery_broker(self) -> str:
