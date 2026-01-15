@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 class CreateUserRequest(BaseModel):
     phone_e164: str = Field(..., examples=["+5511999999999"])
@@ -38,3 +38,10 @@ class AddTargetsRequest(BaseModel):
     user_ids: list[int]
     batch_no: int = 1
     state: str = "RELEASED"
+
+class CreateStaffRequest(BaseModel):
+    restaurant_id: int
+    email: EmailStr
+    password: str
+    role: str = "CLIENT_ADMIN" # ou "INTERNAL_ADMIN", "CLIENT_STAFF"
+
