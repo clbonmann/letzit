@@ -264,3 +264,71 @@ async def debug_force_accept_as_user(
         "qr_token": qr_token,
         "instructions": "Use este qr_token no endpoint /verify ou /consume para testar."
     }
+
+class NoShowRequest(BaseModel):
+    # Accepts either Claim ID or QR Token to identify the reservation
+    claim_id: Optional[int] = None
+    qr_token: Optional[str] = None
+
+@router.post("/no-show", summary="Mark Customer No-Show")
+async def mark_no_show(
+    payload: NoShowRequest,
+    db: AsyncSession = Depends(get_db_session),
+    staff: dict = Depends(get_current_staff),
+):
+    """
+    Staff manually marks that a customer reserved but didn't show up.
+    This invalidates the QR Code and applies the 'NO_SHOW' status.
+    """
+    rid = int(staff["restaurant_id"])
+
+    # 1. Find the Claim
+    val = payload.qr_token if payload.qr_token else payload.claim_id
+    field = "qr_token" if payload.qr_token else "id"
+    
+    query = text(f"""
+        SELECT c.id, c.status, c.user_id, o.restaurant_id
+        FROM offer_claims c
+        JOIN offers o ON o.id = c.offer_id
+        WHERE c.{field} = :val
+    """)
+    
+    row = (await db.execute(query, {"val": val})).mappings().first()
+
+    if not row:
+        raise HTTPException(404, "Reservation not found.")
+
+    # 2. Security Check
+    if row.restaurant_id != rid:
+        raise HTTPException(403, "This reservation belongs to another restaurant.")
+
+    if row.status != 'ACCEPTED':
+        raise HTTPException(400, f"Cannot mark No-Show. Current status: {row.status}")
+
+    # 3. Mark No-Show
+    await db.execute(
+        text("""
+            UPDATE offer_claims 
+            SET status = 'NO_SHOW', 
+                updated_at = NOW(),
+                penalty_applied_at = NOW() -- Used for cooldown logic later
+            WHERE id = :cid
+        """),
+        {"cid": row.id}
+    )
+    
+    # 4. Apply Cooldown (Optional Logic from your original no_show.py)
+    # We apply a 24h cooldown to the user for missing a reservation
+    await db.execute(
+        text("""
+            UPDATE users 
+            SET cooldown_until = GREATEST(COALESCE(cooldown_until, NOW()), NOW() + interval '24 hours')
+            WHERE id = :uid
+        """),
+        {"uid": row.user_id}
+    )
+    
+    await db.commit()
+
+    return {"status": "success", "message": "Marked as No-Show. User penalized."}
+
