@@ -1,0 +1,15 @@
+# Ambiente Virtual (Onde estão os 3000 arquivos)
+venv/
+env/
+.env
+
+# Arquivos compilados do Python
+__pycache__/
+*.pyc
+
+# Arquivos de log e IDE
+.vscode/
+*.log
+
+# Alembic (apenas se tiver arquivos gerados automaticamente que não devem subir, mas geralmente mantemos o versions)
+# Não ignore a pasta versions!
