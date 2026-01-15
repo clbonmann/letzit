@@ -3,20 +3,17 @@ from datetime import datetime
 from pydantic import BaseModel, EmailStr
 
 # --- AUTH ---
+class RequestCodeRequest(BaseModel):
+    phone_e164: str
+
 class ClientLoginRequest(BaseModel):
-    phone: str          # Formato E.164: +5511999998888
+    phone: str
     lat: float
     lon: float
     accuracy: Optional[float] = 0.0
     fcm_token: Optional[str] = None
 
-class ClientLoginResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    user_id: int
-    reputation: float
-
-# --- PROFILE ---
+# --- PROFILE & LOCATION ---
 class UserProfileResponse(BaseModel):
     id: int
     name: str | None
@@ -32,26 +29,12 @@ class UserUpdateProfileRequest(BaseModel):
     email: Optional[EmailStr] = None
     avatar_url: Optional[str] = None
 
-# --- LOCATION ---
-class LocationUpdateRequest(BaseModel):
+class LocationUpdateSchema(BaseModel):
     latitude: float
     longitude: float
     accuracy: Optional[float] = 0.0
 
-# --- FEED / OFFERS ---
-class OfferFeedItem(BaseModel):
-    id: int
-    restaurant_id: int
-    restaurant_name: str
-    logo_url: Optional[str]
-    title: str
-    message: Optional[str]
-    price_cents: int
-    original_price_cents: Optional[int]
-    end_at: str # ou datetime
-    distance_m: Optional[int]
-    placement: str # 'NORMAL' ou 'CITY_HOME'
-
+# --- FEED & OFFERS ---
 class AcceptOfferResponse(BaseModel):
     status: str
     offer_id: int
@@ -60,3 +43,4 @@ class AcceptOfferResponse(BaseModel):
     qr_token: str | None = None
     accepted_count: int | None = None
     accept_limit: int | None = None
+
