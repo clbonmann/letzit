@@ -14,7 +14,7 @@ from app.routes import (
 )
 
 # 3. Admin Routes (Backoffice)
-from app.routes import admin_users, admin_system
+from app.routes import admin, admin_jobs
 
 app = FastAPI(title="LetzIT API")
 
@@ -34,5 +34,10 @@ app.include_router(staff_pos.router)
 app.include_router(staff_stats.router)
 
 # Admin
-app.include_router(admin_users.router)
-app.include_router(admin_system.router)
+app.include_router(admin.router)
+app.include_router(admin_jobs.router)
+
+@app.get("/health", tags=["system"])
+async def health_check():
+    """Endpoint simples para verificar se a API está no ar."""
+    return {"status": "ok", "version": "2.0.0"}
