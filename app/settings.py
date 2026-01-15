@@ -3,12 +3,10 @@ from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
 
-# --- FORÇA O CARREGAMENTO DO .ENV ---
-# Isso garante que o Python leia o arquivo .env da raiz
+# Tenta carregar o .env localmente (no Railway isso é ignorado, o que é bom)
 load_dotenv()
 
 class Settings(BaseSettings):
-    # Configuração para ler .env automaticamente também
     model_config = SettingsConfigDict(
         env_file=".env", 
         env_file_encoding="utf-8", 
@@ -22,17 +20,13 @@ class Settings(BaseSettings):
     # App
     APP_NAME: str = "LetzIT"
 
-    # Infra (Obrigatórios - O erro estava aqui)
-    DATABASE_URL="postgresql://postgres:GdEb3ccAfgGabgC4g1b41GDGCE4AcDC6@centerbeam.proxy.rlwy.net:51248/railway"
-    REDIS_URL="redis://localhost:6379"
-
-    # Celery
-    CELERY_BROKER_URL: str | None = None
-    CELERY_RESULT_BACKEND: str | None = None
+    # Infra (Aqui estava o erro: Use ':' e não '=')
+    DATABASE_URL: str
+    REDIS_URL: str
 
     # Authentication
-    JWT_SECRET:str = "segredo_temporario_desenvolvimento_123"
-    JWT_EXPIRES_MIN: int = 60 * 24  # 24 horas
+    JWT_SECRET: str | None = None
+    JWT_EXPIRES_MIN: int = 60 * 24
     JWT_ALG: str = "HS256"
 
     # Cloudinary
@@ -44,6 +38,10 @@ class Settings(BaseSettings):
     RESEND_API_KEY: Optional[str] = None
     RESEND_FROM: Optional[str] = None
     STAFF_ACTIVATION_BASE_URL: Optional[str] = None
+
+    # Celery
+    CELERY_BROKER_URL: str | None = None
+    CELERY_RESULT_BACKEND: str | None = None
 
     @property
     def celery_broker(self) -> str:
