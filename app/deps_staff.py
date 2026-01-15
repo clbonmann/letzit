@@ -9,7 +9,6 @@ from app.settings import settings
 
 bearer = HTTPBearer(auto_error=False)
 
-
 async def get_current_staff(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer),
     db: AsyncSession = Depends(get_db_session),
@@ -21,12 +20,17 @@ async def get_current_staff(
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALG])
         staff_id = int(payload.get("sub"))
+        
+        # Opcional: Validar se token tem role (para evitar token de cliente aqui)
+        # if payload.get("role") is None: raise ...
+        
     except (JWTError, TypeError, ValueError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
+    # Busca no banco para garantir que staff ainda existe e está ativo
     staff = (await db.execute(
         text("""
-            SELECT id, restaurant_id, email, role, is_active
+            SELECT id, restaurant_id, email, role, is_active, name
             FROM restaurant_staff
             WHERE id = :sid
         """),
@@ -37,3 +41,4 @@ async def get_current_staff(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Staff inactive or not found")
 
     return dict(staff)
+
