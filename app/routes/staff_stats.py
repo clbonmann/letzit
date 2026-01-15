@@ -1,48 +1,24 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Any
+from typing import List, Dict
 
 from fastapi import APIRouter, Depends, Query, HTTPException
-from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
+# IMPORTANDO SCHEMAS (Agora do lugar certo)
+from app.schemas.staff import (
+    DashboardStatsResponse,
+    AudienceStatsResponse,
+    AudienceBucket
+)
 
 router = APIRouter(prefix="/staff/stats", tags=["staff-stats"])
 
-# --- SCHEMAS ---
-
-class DashboardStats(BaseModel):
-    # Financeiro
-    total_revenue_cents: int
-    
-    # Operacional Hoje
-    today_accepted: int
-    today_redeemed: int
-    today_no_shows: int
-    conversion_rate: float
-    
-    # Gestão de Ofertas
-    active_offers_count: int
-    active_offers_breakdown: Dict[str, int] # Ex: {"NORMAL": 5, "CITY_HOME": 1}
-
-class AudienceBucket(BaseModel):
-    radius_km: int
-    user_count: int
-    label: str
-
-class AudienceStats(BaseModel):
-    total_nearby: int
-    active_window_minutes: int
-    breakdown: List[AudienceBucket]
-    computed_at: datetime
-
-# --- ENDPOINTS ---
-
-@router.get("/dashboard", response_model=DashboardStats)
+@router.get("/dashboard", response_model=DashboardStatsResponse)
 async def get_dashboard_stats(
     days_revenue: int = Query(30, description="Dias para cálculo de receita total"),
     db: AsyncSession = Depends(get_db_session),
@@ -57,11 +33,10 @@ async def get_dashboard_stats(
     rid = int(staff["restaurant_id"])
     now = datetime.now(timezone.utc)
     
-    # Data de corte para Receita (ex: últimos 30 dias)
+    # Data de corte para Receita
     since_revenue = now - timedelta(days=days_revenue)
     
     # Data de corte para "Hoje" (início do dia UTC)
-    # Nota: Em produção, idealmente ajustar para o timezone do restaurante
     start_of_today = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
 
     # 1. Query Combinada: KPIs Financeiros e Diários
@@ -82,7 +57,7 @@ async def get_dashboard_stats(
                 WHERE c.status = 'REDEEMED' AND c.redeemed_at >= :start_today
             )::int as today_redeemed,
 
-            -- Operação HOJE: No Shows (Gente que aceitou mas não foi ou cancelou hoje)
+            -- Operação HOJE: No Shows
             COUNT(c.id) FILTER (
                 WHERE c.status IN ('NO_SHOW', 'CANCELLED') 
                 AND (c.expires_at >= :start_today OR c.canceled_at >= :start_today)
@@ -121,7 +96,7 @@ async def get_dashboard_stats(
     # Taxa de Conversão Diária
     conversion = (redeemed / accepted * 100) if accepted > 0 else 0.0
 
-    return DashboardStats(
+    return DashboardStatsResponse(
         total_revenue_cents=kpi.revenue or 0,
         
         today_accepted=accepted,
@@ -134,7 +109,7 @@ async def get_dashboard_stats(
     )
 
 
-@router.get("/audience", response_model=AudienceStats)
+@router.get("/audience", response_model=AudienceStatsResponse)
 async def get_audience_realtime(
     active_minutes: int = Query(60, ge=10, le=1440),
     db: AsyncSession = Depends(get_db_session),
@@ -143,7 +118,6 @@ async def get_audience_realtime(
     """
     Mapa de Calor (Real-Time):
     Calcula quantos usuários ativos existem ao redor do restaurante AGORA.
-    Não usa cache para garantir dados frescos durante o MVP.
     """
     rid = int(staff["restaurant_id"])
 
@@ -157,7 +131,6 @@ async def get_audience_realtime(
         raise HTTPException(400, "Localização do restaurante não configurada.")
 
     # 2. Query Geoespacial (Buckets de Distância)
-    # Conta usuários únicos ativos recentemente em cada raio
     query = text("""
         SELECT 
             COUNT(*) FILTER (WHERE ST_DWithin(u.geog, :r_geog, 1000))::int as km1,
@@ -183,9 +156,10 @@ async def get_audience_realtime(
         AudienceBucket(radius_km=10, user_count=counts.km10, label="Cidade (10km)")
     ]
 
-    return AudienceStats(
+    return AudienceStatsResponse(
         total_nearby=counts.km10,
         active_window_minutes=active_minutes,
         breakdown=buckets,
         computed_at=datetime.now(timezone.utc)
     )
+
