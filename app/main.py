@@ -7,7 +7,7 @@ from app.routes.admin import router as admin_router
 from app.routes.redeem import router as redeem_router
 from app.routes.staff_auth import router as staff_auth_router
 from app.routes.admin_jobs import router as admin_jobs_router
-from app.routes.users_location import router as users_location_router
+from app.routes.clients_location import router as clients_location_router
 from app.routes.staff_offers_quote import router as staff_offers_quote_router
 from app.routes.staff_offers_create import router as staff_offers_create_router
 from app.routes.home import router as home_router
@@ -41,7 +41,7 @@ app.include_router(admin_router)
 app.include_router(redeem_router)
 app.include_router(staff_auth_router)
 app.include_router(admin_jobs_router)
-app.include_router(users_location_router)
+app.include_router(clients_location_router)
 app.include_router(staff_offers_quote_router)
 app.include_router(staff_offers_create_router)
 app.include_router(home_router)
