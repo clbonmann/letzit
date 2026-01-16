@@ -123,7 +123,7 @@ class RestaurantStaff(Base):
     name = Column(String, nullable=True)
     email = Column(String, nullable=False)
     password_hash = Column(String, nullable=False)
-    role = Column(String, nullable=False)  # INTERNAL_ADMIN, CLIENT_ADMIN, CLIENT_STAFF
+    role = Column(String, nullable=False)  # INTERNAL_ADMIN, REST_ADMIN, REST_STAFF
     is_active = Column(Boolean, nullable=False, default=True)
     
     # Ativação
@@ -139,7 +139,7 @@ class RestaurantStaff(Base):
     __table_args__ = (
         UniqueConstraint("restaurant_id", "email", name="uq_restaurant_email"),
         CheckConstraint(
-            "role IN ('INTERNAL_ADMIN','CLIENT_ADMIN','CLIENT_STAFF')",
+            "role IN ('INTERNAL_ADMIN','REST_ADMIN','REST_STAFF')",
             name="ck_restaurant_staff_role",
         ),
     )
