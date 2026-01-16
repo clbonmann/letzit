@@ -34,7 +34,7 @@ SELECT
   COUNT(*) FILTER (WHERE ST_DWithin(u.geog, (SELECT geog FROM r), 20000))::int AS km20,
   COUNT(*) FILTER (WHERE ST_DWithin(u.geog, (SELECT geog FROM r), 30000))::int AS km30,
   COUNT(*) FILTER (WHERE ST_DWithin(u.geog, (SELECT geog FROM r), 50000))::int AS km50
-FROM users u
+FROM clients u
 WHERE u.geog IS NOT NULL
   AND u.last_loc_at > now() - interval '15 minutes';
 """)

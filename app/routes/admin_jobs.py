@@ -27,25 +27,25 @@ async def run_no_show_job(
             SET status = 'NO_SHOW', penalty_applied_at = now()
             WHERE status = 'ACCEPTED'
               AND expires_at < now()
-            RETURNING user_id
+            RETURNING client_id
         ),
         updated_stats AS (
-            INSERT INTO user_stats (user_id, no_show_count)
-            SELECT user_id, 1 FROM expired_claims
-            ON CONFLICT (user_id) 
-            DO UPDATE SET no_show_count = user_stats.no_show_count + 1
-            RETURNING user_id
+            INSERT INTO client_stats (client_id, no_show_count)
+            SELECT client_id, 1 FROM expired_claims
+            ON CONFLICT (client_id) 
+            DO UPDATE SET no_show_count = client_stats.no_show_count + 1
+            RETURNING client_id
         )
-        UPDATE users u
+        UPDATE clients u
         SET 
             reputation = GREATEST(0, reputation - 20),
             cooldown_until = now() + interval '24 hours'
         FROM updated_stats us
-        WHERE u.id = us.user_id;
+        WHERE u.id = us.client_id;
     """)
 
     result = await db.execute(query)
-    # O rowcount aqui retorna quantas linhas foram afetadas no último update (users)
+    # O rowcount aqui retorna quantas linhas foram afetadas no último update (clients)
     processed = result.rowcount 
     
     await db.commit()

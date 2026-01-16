@@ -6,7 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
-from app.security import verify_password, create_access_token, hash_password
+from app.security import verify_password, create_access_token, get_password_hash
 # IMPORTANDO SCHEMAS
 from app.schemas.staff import (
     StaffLoginRequest, StaffLoginResponse, StaffMeResponse, 
@@ -18,14 +18,14 @@ router = APIRouter(prefix="/staff/auth", tags=["staff-auth"])
 @router.post("/login", response_model=StaffLoginResponse)
 async def login(payload: StaffLoginRequest, db: AsyncSession = Depends(get_db_session)):
     query = text("SELECT id, name, email, password_hash, role, restaurant_id, is_active FROM restaurant_staff WHERE lower(email) = lower(:email)")
-    user = (await db.execute(query, {"email": payload.email})).mappings().first()
+    staff = (await db.execute(query, {"email": payload.email})).mappings().first()
 
-    if not user: raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Credenciais inválidas")
-    if not user.is_active: raise HTTPException(status.HTTP_403_FORBIDDEN, "Conta pendente de ativação.")
-    if not verify_password(payload.password, user.password_hash): raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Credenciais inválidas")
+    if not staff: raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Credenciais inválidas")
+    if not staff.is_active: raise HTTPException(status.HTTP_403_FORBIDDEN, "Conta pendente de ativação.")
+    if not verify_password(payload.password, staff.password_hash): raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Credenciais inválidas")
 
-    access_token = create_access_token(subject=str(user.id), extra_claims={"role": user.role, "rid": int(user.restaurant_id)})
-    return StaffLoginResponse(access_token=access_token, staff_id=user.id, name=user.name or "", role=user.role, restaurant_id=user.restaurant_id)
+    access_token = create_access_token(subject=str(staff.id), extra_claims={"role": staff.role, "rid": int(staff.restaurant_id)})
+    return StaffLoginResponse(access_token=access_token, staff_id=staff.id, name=staff.name or "", role=staff.role, restaurant_id=staff.restaurant_id)
 
 @router.get("/me", response_model=StaffMeResponse)
 async def get_me(staff: dict = Depends(get_current_staff)):
@@ -47,7 +47,7 @@ async def activate_account(payload: ActivateAccountRequest, db: AsyncSession = D
     if row.is_active: raise HTTPException(409, "Conta já ativada.")
     if row.activation_expires_at and row.activation_expires_at < now: raise HTTPException(400, "Link expirado.")
 
-    await db.execute(text("UPDATE restaurant_staff SET password_hash = :ph, is_active = true, activated_at = :now, activation_token = NULL, activation_expires_at = NULL WHERE id = :sid"), {"ph": hash_password(payload.password), "now": now, "sid": row.id})
+    await db.execute(text("UPDATE restaurant_staff SET password_hash = :ph, is_active = true, activated_at = :now, activation_token = NULL, activation_expires_at = NULL WHERE id = :sid"), {"ph": get_password_hash(payload.password), "now": now, "sid": row.id})
     await db.commit()
     return {"status": "ACTIVATED", "staff_id": row.id}
 
@@ -56,6 +56,6 @@ async def change_own_password(payload: ChangePasswordRequest, db: AsyncSession =
     row = (await db.execute(text("SELECT password_hash FROM restaurant_staff WHERE id = :uid"), {"uid": int(current_staff["id"])})).mappings().first()
     if not row or not verify_password(payload.old_password, row.password_hash): raise HTTPException(400, "Senha atual incorreta.")
     
-    await db.execute(text("UPDATE restaurant_staff SET password_hash = :ph WHERE id = :uid"), {"ph": hash_password(payload.new_password), "uid": int(current_staff["id"])})
+    await db.execute(text("UPDATE restaurant_staff SET password_hash = :ph WHERE id = :uid"), {"ph": get_password_hash(payload.new_password), "uid": int(current_staff["id"])})
     await db.commit()
     return {"message": "Senha alterada."}

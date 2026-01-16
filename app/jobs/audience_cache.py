@@ -15,7 +15,7 @@ WITH r AS (
 ),
 u AS (
   SELECT geog
-  FROM users
+  FROM clients
   WHERE geog IS NOT NULL
     AND last_loc_at > now() - make_interval(mins => :mins)
 )

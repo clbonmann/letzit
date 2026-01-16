@@ -1,12 +1,12 @@
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field
 
-class CreateUserRequest(BaseModel):
+class CreateClientRequest(BaseModel):
     phone_e164: str = Field(..., examples=["+5511999999999"])
     level: int = 1
     reputation: int = 100
 
-class CreateUserResponse(BaseModel):
+class CreateClientResponse(BaseModel):
     id: int
     phone_e164: str
 
@@ -35,7 +35,7 @@ class CreateOfferResponse(BaseModel):
     end_at: datetime
 
 class AddTargetsRequest(BaseModel):
-    user_ids: list[int]
+    client_ids: list[int]
     batch_no: int = 1
     state: str = "RELEASED"
 
@@ -43,5 +43,5 @@ class CreateStaffRequest(BaseModel):
     restaurant_id: int
     email: EmailStr
     password: str
-    role: str = "CLIENT_ADMIN" # ou "INTERNAL_ADMIN", "CLIENT_STAFF"
+    role: str = "REST_ADMIN" # ou "INTERNAL_ADMIN", "REST_STAFF"
 

@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
 from app.perms_staff import require_admin
-from app.security import hash_password 
+from app.security import get_password_hash 
 # IMPORTANDO SCHEMAS
 from app.schemas.staff import (
     StaffUserResponse, 
@@ -159,7 +159,7 @@ async def admin_reset_password(
 
     await db.execute(
         text("UPDATE restaurant_staff SET password_hash = :ph, updated_at = NOW() WHERE id = :sid"),
-        {"ph": hash_password(payload.new_password), "sid": staff_id}
+        {"ph": get_password_hash(payload.new_password), "sid": staff_id}
     )
     await db.commit()
 

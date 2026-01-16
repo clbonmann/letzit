@@ -9,7 +9,7 @@ from app.settings import settings
 # Login do Cliente
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/client/auth/login")
 
-def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
+def get_current_client_id(token: str = Depends(oauth2_scheme)) -> int:
     """
     Decodifica o Token JWT do Cliente e retorna o ID do usuário (uid).
     """
@@ -28,10 +28,10 @@ def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
     try:
         payload = jwt.decode(token, secret, algorithms=[algorithm])
         
-        user_id_str: str = payload.get("sub")
+        client_id_str: str = payload.get("sub")
         token_type: str = payload.get("type") # client vs staff
 
-        if user_id_str is None:
+        if client_id_str is None:
             raise credentials_exception
             
         # Garante que é um token de CLIENTE
@@ -41,7 +41,7 @@ def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
                 detail="Invalid token type (expected client)"
             )
             
-        return int(user_id_str)
+        return int(client_id_str)
 
     except (JWTError, ValidationError, ValueError):
         raise credentials_exception

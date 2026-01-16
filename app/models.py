@@ -1,5 +1,6 @@
 from datetime import datetime
 import uuid
+from geoalchemy2 import Geography
 
 from sqlalchemy import (
     BigInteger,
@@ -23,10 +24,10 @@ class Base(DeclarativeBase):
 
 
 # =========================
-# USERS
+# CLIENTS (Antigo Users)
 # =========================
-class User(Base):
-    __tablename__ = "users"
+class Client(Base):
+    __tablename__ = "clients"  # <--- MUDOU DE users PARA clients
 
     id = Column(BigInteger, primary_key=True)
     phone_e164 = Column(String, unique=True, nullable=False)
@@ -35,34 +36,32 @@ class User(Base):
     level = Column(Integer, nullable=False, default=1)
     reputation = Column(Integer, nullable=False, default=100)
     
-    # Push Notification Token (Adicionado para suportar o login)
+    # Push Notification Token
     fcm_token = Column(String, nullable=True) 
 
-    # Geo (Adicionados para suportar PostGIS nas rotas)
-    # Nota: Em produção, você precisa garantir que a extensão PostGIS está ativa no banco
-    # geog = Column(Geography(geometry_type='POINT', srid=4326), nullable=True)
-    # Como não tenho a lib geoalchemy2 aqui, vou deixar comentado ou usar TypeDecorator se necessário.
-    # Mas assumindo que você usa raw SQL com ST_SetSRID, o SQLAlchemy ignora se não mapear, 
-    # ou podemos mapear como 'UserDefined' ou simplesmente ignorar no ORM se só usarmos SQL bruto.
-    # Para simplificar e evitar erro de import da geoalchemy2 se não tiver instalada:
-    # last_loc_at e loc_accuracy_m são suficientes como metadados.
-    
+    # Geo
+    # last_loc_at e loc_accuracy_m são suficientes como metadados por enquanto.
     last_loc_at = Column(DateTime(timezone=True), nullable=True)
     loc_accuracy_m = Column(Integer, nullable=True, default=0)
+
+    # Geo: Ponto geográfico (Latitude/Longitude)
+    # srid=4326 é o padrão GPS (WGS 84)
+    geog = Column(Geography(geometry_type='POINT', srid=4326), nullable=True)
 
     cooldown_until = Column(DateTime(timezone=True), nullable=True)
     is_blocked = Column(Boolean, nullable=False, default=False)
 
-    stats = relationship("UserStats", back_populates="user", uselist=False)
-    claims = relationship("OfferClaim", back_populates="user")
+    # Relacionamentos atualizados
+    stats = relationship("ClientStats", back_populates="client", uselist=False)
+    claims = relationship("OfferClaim", back_populates="client")
 
 
-class UserStats(Base):
-    __tablename__ = "user_stats"
+class ClientStats(Base):
+    __tablename__ = "client_stats"  # <--- MUDOU DE user_stats PARA client_stats
 
-    user_id = Column(
+    client_id = Column( # <--- MUDOU DE user_id PARA client_id
         BigInteger,
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("clients.id", ondelete="CASCADE"), # <--- FK aponta para clients
         primary_key=True,
     )
 
@@ -71,7 +70,7 @@ class UserStats(Base):
     no_show_count = Column(Integer, nullable=False, default=0)
     last_no_show_at = Column(DateTime(timezone=True), nullable=True)
 
-    user = relationship("User", back_populates="stats")
+    client = relationship("Client", back_populates="stats")
 
 
 # =========================
@@ -83,10 +82,10 @@ class Restaurant(Base):
     id = Column(BigInteger, primary_key=True)
     name = Column(String, nullable=False)
     
-    # Campos de Endereço e Perfil (Consistência com rotas)
+    # Campos de Endereço e Perfil
     cnpj = Column(String, nullable=True)
     city = Column(String, nullable=True)
-    city_slug = Column(String, nullable=True) # Para a Home
+    city_slug = Column(String, nullable=True)
     address_street = Column(String, nullable=True)
     address_number = Column(String, nullable=True)
     address_district = Column(String, nullable=True)
@@ -106,6 +105,10 @@ class Restaurant(Base):
     offers = relationship("Offer", back_populates="restaurant")
     staff = relationship("RestaurantStaff", back_populates="restaurant")
 
+    # Geo: Ponto geográfico (Latitude/Longitude)
+    # srid=4326 é o padrão GPS (WGS 84)
+    geog = Column(Geography(geometry_type='POINT', srid=4326), nullable=True)
+
 
 class RestaurantStaff(Base):
     __tablename__ = "restaurant_staff"
@@ -117,7 +120,7 @@ class RestaurantStaff(Base):
         nullable=False,
     )
 
-    name = Column(String, nullable=True) # Adicionado para bater com schemas
+    name = Column(String, nullable=True)
     email = Column(String, nullable=False)
     password_hash = Column(String, nullable=False)
     role = Column(String, nullable=False)  # INTERNAL_ADMIN, CLIENT_ADMIN, CLIENT_STAFF
@@ -135,7 +138,6 @@ class RestaurantStaff(Base):
 
     __table_args__ = (
         UniqueConstraint("restaurant_id", "email", name="uq_restaurant_email"),
-        # Atualizei a constraint para os roles novos que usamos
         CheckConstraint(
             "role IN ('INTERNAL_ADMIN','CLIENT_ADMIN','CLIENT_STAFF')",
             name="ck_restaurant_staff_role",
@@ -157,7 +159,7 @@ class Offer(Base):
     )
 
     title = Column(String, nullable=False)
-    message = Column(String, nullable=True) # Adicionado ("Ei Osvaldo...")
+    message = Column(String, nullable=True)
     description = Column(Text, nullable=True)
     
     # Pricing
@@ -165,7 +167,7 @@ class Offer(Base):
     original_price_cents = Column(Integer, nullable=True)
     
     # Targeting
-    placement = Column(String, nullable=False, default="NORMAL") # NORMAL, CITY_HOME
+    placement = Column(String, nullable=False, default="NORMAL")
     radius_km = Column(Integer, nullable=True)
 
     start_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -174,7 +176,7 @@ class Offer(Base):
     status = Column(
         String,
         nullable=False,
-        default="CREATED", # CREATED, ACTIVE, PAUSED, CLOSED
+        default="CREATED",
     )
     status_reason = Column(String, nullable=True)
     status_changed_by_staff_id = Column(BigInteger, nullable=True)
@@ -182,7 +184,7 @@ class Offer(Base):
 
     accept_limit = Column(Integer, nullable=False)
     accepted_count = Column(Integer, nullable=False, default=0)
-    claimed_count = Column(Integer, nullable=False, default=0) # Quantos foram na loja
+    claimed_count = Column(Integer, nullable=False, default=0)
 
     target_batch_size = Column(Integer, nullable=False, default=50)
     max_target_total = Column(Integer, nullable=False, default=300)
@@ -206,9 +208,9 @@ class OfferTarget(Base):
         ForeignKey("offers.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    user_id = Column(
+    client_id = Column( # <--- MUDOU DE user_id PARA client_id
         BigInteger,
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("clients.id", ondelete="CASCADE"), # <--- FK aponta para clients
         primary_key=True,
     )
 
@@ -217,7 +219,7 @@ class OfferTarget(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     released_at = Column(DateTime(timezone=True), nullable=True)
-    used_at = Column(DateTime(timezone=True), nullable=True) # Se virou claim
+    used_at = Column(DateTime(timezone=True), nullable=True)
 
     offer = relationship("Offer", back_populates="targets")
 
@@ -232,9 +234,9 @@ class OfferClaim(Base):
         ForeignKey("offers.id", ondelete="CASCADE"),
         nullable=False,
     )
-    user_id = Column(
+    client_id = Column( # <--- MUDOU DE user_id PARA client_id
         BigInteger,
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("clients.id", ondelete="CASCADE"), # <--- FK aponta para clients
         nullable=False,
     )
 
@@ -251,14 +253,12 @@ class OfferClaim(Base):
     penalty_applied_at = Column(DateTime(timezone=True), nullable=True)
 
     offer = relationship("Offer", back_populates="claims")
-    user = relationship("User", back_populates="claims")
+    client = relationship("Client", back_populates="claims") # <--- Renomeada a prop
 
     __table_args__ = (
-        UniqueConstraint("offer_id", "user_id", name="uq_offer_user"),
-        # Correção aqui: Padronizando CANCELLED
+        UniqueConstraint("offer_id", "client_id", name="uq_offer_client"), # <--- Constraint atualizada
         CheckConstraint(
             "status IN ('ACCEPTED','REDEEMED','CANCELLED','NO_SHOW')",
             name="ck_offer_claim_status",
         ),
     )
-

@@ -137,7 +137,7 @@ async def get_audience_realtime(
             COUNT(*) FILTER (WHERE ST_DWithin(u.geog, :r_geog, 3000))::int as km3,
             COUNT(*) FILTER (WHERE ST_DWithin(u.geog, :r_geog, 5000))::int as km5,
             COUNT(*) FILTER (WHERE ST_DWithin(u.geog, :r_geog, 10000))::int as km10
-        FROM users u
+        FROM clients u
         WHERE u.geog IS NOT NULL
           AND u.is_blocked = FALSE
           AND u.last_loc_at > (NOW() - make_interval(mins => :mins))
@@ -150,10 +150,10 @@ async def get_audience_realtime(
 
     # 3. Formata Resposta
     buckets = [
-        AudienceBucket(radius_km=1, user_count=counts.km1, label="Vizinhos (1km)"),
-        AudienceBucket(radius_km=3, user_count=counts.km3, label="Bairro (3km)"),
-        AudienceBucket(radius_km=5, user_count=counts.km5, label="Região (5km)"),
-        AudienceBucket(radius_km=10, user_count=counts.km10, label="Cidade (10km)")
+        AudienceBucket(radius_km=1, client_count=counts.km1, label="Vizinhos (1km)"),
+        AudienceBucket(radius_km=3, client_count=counts.km3, label="Bairro (3km)"),
+        AudienceBucket(radius_km=5, client_count=counts.km5, label="Região (5km)"),
+        AudienceBucket(radius_km=10, client_count=counts.km10, label="Cidade (10km)")
     ]
 
     return AudienceStatsResponse(

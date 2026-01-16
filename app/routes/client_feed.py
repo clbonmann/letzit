@@ -6,18 +6,18 @@ from fastapi import APIRouter, Depends, Query, HTTPException, BackgroundTasks
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db_session, AsyncSessionLocal
-from app.deps_client import get_current_user_id
+from app.deps_client import get_current_client_id
 # IMPORTANDO SCHEMAS
 from app.schemas.client import AcceptOfferResponse
 
 router = APIRouter(prefix="/client/offers", tags=["client-feed"])
 
-async def log_analytics_task(offer_id: int, user_id: int, event: str):
+async def log_analytics_task(offer_id: int, client_id: int, event: str):
     async with AsyncSessionLocal() as session:
         try:
             await session.execute(
-                text("INSERT INTO offer_analytics (offer_id, user_id, event_type) VALUES (:oid, :uid, :evt)"),
-                {"oid": offer_id, "uid": user_id, "evt": event}
+                text("INSERT INTO offer_analytics (offer_id, client_id, event_type) VALUES (:oid, :uid, :evt)"),
+                {"oid": offer_id, "uid": client_id, "evt": event}
             )
             await session.commit()
         except Exception as e: print(f"Analytics error: {e}")
@@ -27,7 +27,7 @@ async def get_picks(
     lat: Optional[float] = Query(None),
     lon: Optional[float] = Query(None),
     city_slug: Optional[str] = Query(None),
-    uid: int = Depends(get_current_user_id), 
+    uid: int = Depends(get_current_client_id), 
     db: AsyncSession = Depends(get_db_session),
 ):
     # 1. Auto-detecção de cidade
@@ -55,9 +55,9 @@ async def get_picks(
     # 3. Estratégia PROXIMITY
     rows = (await db.execute(
         text("""
-            SELECT o.id, o.restaurant_id, r.name AS restaurant_name, r.logo_url, o.title, o.message, o.price_cents, o.original_price_cents, o.end_at, ST_Distance(r.geog, (SELECT geog FROM users WHERE id=:uid))::int as distance_m, 'NORMAL' as placement
+            SELECT o.id, o.restaurant_id, r.name AS restaurant_name, r.logo_url, o.title, o.message, o.price_cents, o.original_price_cents, o.end_at, ST_Distance(r.geog, (SELECT geog FROM clients WHERE id=:uid))::int as distance_m, 'NORMAL' as placement
             FROM offer_targets t JOIN offers o ON o.id = t.offer_id JOIN restaurants r ON r.id = o.restaurant_id
-            WHERE t.user_id = :uid AND t.used_at IS NULL AND o.status = 'ACTIVE' AND o.end_at > NOW()
+            WHERE t.client_id = :uid AND t.used_at IS NULL AND o.status = 'ACTIVE' AND o.end_at > NOW()
             ORDER BY t.created_at DESC LIMIT 5
         """), {"uid": uid}
     )).mappings().all()
@@ -68,7 +68,7 @@ async def get_picks(
             rows = (await db.execute(
                 text("""
                     WITH new_matches AS (
-                        INSERT INTO offer_targets (user_id, offer_id, released_at)
+                        INSERT INTO offer_targets (client_id, offer_id, released_at)
                         SELECT :uid, o.id, NOW() FROM offers o JOIN restaurants r ON r.id = o.restaurant_id
                         WHERE o.status = 'ACTIVE' AND o.end_at > NOW() AND o.placement = 'NORMAL' AND ST_DWithin(r.geog, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 15000)
                         ORDER BY ST_Distance(r.geog, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)) ASC LIMIT 5
@@ -100,7 +100,7 @@ async def get_offers_map_source(db: AsyncSession = Depends(get_db_session)):
     return res if res else {"type": "FeatureCollection", "features": []}
 
 @router.get("/{offer_id}")
-async def get_offer_details(offer_id: int, uid: int = Depends(get_current_user_id), db: AsyncSession = Depends(get_db_session)):
+async def get_offer_details(offer_id: int, uid: int = Depends(get_current_client_id), db: AsyncSession = Depends(get_db_session)):
     row = (await db.execute(
         text("SELECT o.id, o.title, o.description, o.message, o.price_cents, o.original_price_cents, o.end_at, o.placement, r.name as restaurant_name, r.logo_url, r.cover_image_url, r.address_street, r.address_number, r.phone, ST_Y(r.geog::geometry) as lat, ST_X(r.geog::geometry) as lon FROM offers o JOIN restaurants r ON r.id = o.restaurant_id WHERE o.id = :oid"),
         {"oid": offer_id}
@@ -109,11 +109,11 @@ async def get_offer_details(offer_id: int, uid: int = Depends(get_current_user_i
     return row
 
 @router.post("/{offer_id}/accept", response_model=AcceptOfferResponse)
-async def accept_offer(offer_id: int, bg: BackgroundTasks, db: AsyncSession = Depends(get_db_session), uid: int = Depends(get_current_user_id)):
+async def accept_offer(offer_id: int, bg: BackgroundTasks, db: AsyncSession = Depends(get_db_session), uid: int = Depends(get_current_client_id)):
     now = datetime.now(timezone.utc)
     # Checks
-    u = (await db.execute(text("SELECT is_blocked, cooldown_until FROM users WHERE id=:uid"), {"uid": uid})).mappings().first()
-    if not u: return AcceptOfferResponse(status="USER_NOT_ELIGIBLE", offer_id=offer_id)
+    u = (await db.execute(text("SELECT is_blocked, cooldown_until FROM clients WHERE id=:uid"), {"uid": uid})).mappings().first()
+    if not u: return AcceptOfferResponse(status="client_NOT_ELIGIBLE", offer_id=offer_id)
     if u.is_blocked: return AcceptOfferResponse(status="BLOCKED", offer_id=offer_id)
     if u.cooldown_until and u.cooldown_until > now: return AcceptOfferResponse(status="COOLDOWN", offer_id=offer_id)
     
@@ -123,17 +123,17 @@ async def accept_offer(offer_id: int, bg: BackgroundTasks, db: AsyncSession = De
     if o.accepted_count >= o.accept_limit: return AcceptOfferResponse(status="SOLD_OUT", offer_id=offer_id, accepted_count=o.accepted_count, accept_limit=o.accept_limit)
     
     # Existing
-    ex = (await db.execute(text("SELECT status, expires_at, qr_token FROM offer_claims WHERE offer_id=:oid AND user_id=:uid"), {"oid": offer_id, "uid": uid})).mappings().first()
+    ex = (await db.execute(text("SELECT status, expires_at, qr_token FROM offer_claims WHERE offer_id=:oid AND client_id=:uid"), {"oid": offer_id, "uid": uid})).mappings().first()
     if ex: return AcceptOfferResponse(status="ACCEPTED" if ex.status=="ACCEPTED" else "CLOSED", offer_id=offer_id, expires_at=ex.expires_at, qr_token=ex.qr_token, accepted_count=o.accepted_count, accept_limit=o.accept_limit)
 
     # Claim
     ttl = o.accept_ttl_hours or 6
     exp = min(o.end_at, now + timedelta(hours=ttl))
     qr = str(uuid4())
-    await db.execute(text("INSERT INTO offer_claims (offer_id, user_id, status, accepted_at, expires_at, qr_token) VALUES (:oid, :uid, 'ACCEPTED', :now, :exp, :qr)"), {"oid": offer_id, "uid": uid, "now": now, "exp": exp, "qr": qr})
+    await db.execute(text("INSERT INTO offer_claims (offer_id, client_id, status, accepted_at, expires_at, qr_token) VALUES (:oid, :uid, 'ACCEPTED', :now, :exp, :qr)"), {"oid": offer_id, "uid": uid, "now": now, "exp": exp, "qr": qr})
     await db.execute(text("UPDATE offers SET accepted_count = accepted_count + 1 WHERE id = :oid"), {"oid": offer_id})
     await db.commit()
     
     bg.add_task(log_analytics_task, offer_id, uid, "CLAIM")
-    return AcceptOfferResponse(status="ACCEPTED", offer_id=offer_id, user_id=uid, expires_at=exp, qr_token=qr, accepted_count=o.accepted_count+1, accept_limit=o.accept_limit)
+    return AcceptOfferResponse(status="ACCEPTED", offer_id=offer_id, client_id=uid, expires_at=exp, qr_token=qr, accepted_count=o.accepted_count+1, accept_limit=o.accept_limit)
 

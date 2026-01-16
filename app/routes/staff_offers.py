@@ -38,7 +38,7 @@ async def quote_offer(payload: QuoteRequest, db: AsyncSession = Depends(get_db_s
         if not payload.radius_km: raise HTTPException(400, "radius_km required")
         pc = (await db.execute(text("SELECT price_cents FROM pricing_radius WHERE country_code='BR' AND radius_km=:r AND is_active=true"), {"r": payload.radius_km})).scalar_one_or_none()
         if not pc: raise HTTPException(400, "Raio não tarifado.")
-        aud = (await db.execute(text("SELECT COUNT(*)::int FROM users WHERE geog IS NOT NULL AND last_loc_at > now() - make_interval(mins=>:m) AND ST_DWithin(geog, (SELECT geog FROM restaurants WHERE id=:rid), :r)"), {"rid": rid, "m": payload.active_minutes, "r": payload.radius_km*1000})).scalar_one()
+        aud = (await db.execute(text("SELECT COUNT(*)::int FROM clients WHERE geog IS NOT NULL AND last_loc_at > now() - make_interval(mins=>:m) AND ST_DWithin(geog, (SELECT geog FROM restaurants WHERE id=:rid), :r)"), {"rid": rid, "m": payload.active_minutes, "r": payload.radius_km*1000})).scalar_one()
         return QuoteResponse(placement="NORMAL", radius_km=payload.radius_km, price_cents=pc, audience_estimate=aud)
 
     if payload.placement == "CITY_HOME":
@@ -47,7 +47,7 @@ async def quote_offer(payload: QuoteRequest, db: AsyncSession = Depends(get_db_s
         if not city: raise HTTPException(400, "Cidade não identificada.")
         st, end = _utc_day_window(datetime.now(timezone.utc))
         used = (await db.execute(text("SELECT COUNT(*)::int FROM city_offer_slots WHERE city=:c AND starts_at=:s AND ends_at=:e"), {"c": city, "s": st, "e": end})).scalar_one()
-        aud = (await db.execute(text("SELECT COUNT(*)::int FROM users WHERE geog IS NOT NULL AND last_loc_at > now() - make_interval(mins=>:m) AND ST_DWithin(geog, (SELECT geog FROM restaurants WHERE id=:rid), :r)"), {"rid": rid, "m": payload.active_minutes, "r": pr.radius_km*1000})).scalar_one()
+        aud = (await db.execute(text("SELECT COUNT(*)::int FROM clients WHERE geog IS NOT NULL AND last_loc_at > now() - make_interval(mins=>:m) AND ST_DWithin(geog, (SELECT geog FROM restaurants WHERE id=:rid), :r)"), {"rid": rid, "m": payload.active_minutes, "r": pr.radius_km*1000})).scalar_one()
         return QuoteResponse(placement="CITY_HOME", radius_km=pr.radius_km, price_cents=pr.price_cents, audience_estimate=aud, city=city, max_slots=pr.max_slots, used_slots=used, available_slots=max(0, pr.max_slots-used), status="AVAILABLE" if pr.max_slots > used else "SOLD_OUT")
     
     raise HTTPException(400, "Invalid placement")

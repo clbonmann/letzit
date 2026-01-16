@@ -4,27 +4,27 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db_session
-from app.deps_client import get_current_user_id 
+from app.deps_client import get_current_client_id 
 # IMPORTANDO OS SCHEMAS
-from app.schemas.client import UserProfileResponse, UserUpdateProfileRequest, LocationUpdateSchema
+from app.schemas.client import ClientProfileResponse, ClientUpdateProfileRequest, LocationUpdateSchema
 
 router = APIRouter(prefix="/client/profile", tags=["client-profile"])
 
-@router.get("", response_model=UserProfileResponse)
+@router.get("", response_model=ClientProfileResponse)
 async def get_my_profile(
-    uid: int = Depends(get_current_user_id),
+    uid: int = Depends(get_current_client_id),
     db: AsyncSession = Depends(get_db_session),
 ):
-    """Retorna dados do usuário logado."""
-    query = text("SELECT id, name, phone_e164 as phone, email, avatar_url, reputation, level, created_at FROM users WHERE id = :uid")
+    """Retorna dados do cliente logado."""
+    query = text("SELECT id, name, phone_e164 as phone, email, avatar_url, reputation, level, created_at FROM clients WHERE id = :uid")
     row = (await db.execute(query, {"uid": uid})).mappings().first()
-    if not row: raise HTTPException(404, "Usuário não encontrado.")
-    return UserProfileResponse(**row)
+    if not row: raise HTTPException(404, "Cliente não encontrado.")
+    return ClientProfileResponse(**row)
 
-@router.patch("", response_model=UserProfileResponse)
+@router.patch("", response_model=ClientProfileResponse)
 async def update_my_profile(
-    payload: UserUpdateProfileRequest,
-    uid: int = Depends(get_current_user_id),
+    payload: ClientUpdateProfileRequest,
+    uid: int = Depends(get_current_client_id),
     db: AsyncSession = Depends(get_db_session),
 ):
     """Atualiza dados cadastrais."""
@@ -36,12 +36,12 @@ async def update_my_profile(
     if not fields: return await get_my_profile(uid, db)
     
     fields.append("updated_at = NOW()")
-    query = text(f"UPDATE users SET {', '.join(fields)} WHERE id = :uid RETURNING id, name, phone_e164 as phone, email, avatar_url, reputation, level, created_at")
+    query = text(f"UPDATE clients SET {', '.join(fields)} WHERE id = :uid RETURNING id, name, phone_e164 as phone, email, avatar_url, reputation, level, created_at")
     
     try:
         row = (await db.execute(query, params)).mappings().first()
         await db.commit()
-        return UserProfileResponse(**row)
+        return ClientProfileResponse(**row)
     except Exception:
         await db.rollback()
         raise HTTPException(500, "Erro ao atualizar perfil.")
@@ -49,12 +49,12 @@ async def update_my_profile(
 @router.post("/location")
 async def update_location(
     location_data: LocationUpdateSchema,
-    uid: int = Depends(get_current_user_id),
+    uid: int = Depends(get_current_client_id),
     db: AsyncSession = Depends(get_db_session),
 ):
     """Atualiza GPS."""
     await db.execute(
-        text("UPDATE users SET geog = ST_SetSRID(ST_MakePoint(:long, :lat), 4326)::geography, last_loc_at = NOW(), loc_accuracy_m = :acc WHERE id = :uid"),
+        text("UPDATE clients SET geog = ST_SetSRID(ST_MakePoint(:long, :lat), 4326)::geography, last_loc_at = NOW(), loc_accuracy_m = :acc WHERE id = :uid"),
         {"lat": location_data.latitude, "long": location_data.longitude, "acc": location_data.accuracy, "uid": uid}
     )
     await db.commit()
@@ -62,12 +62,12 @@ async def update_location(
 
 @router.delete("")
 async def delete_account(
-    uid: int = Depends(get_current_user_id),
+    uid: int = Depends(get_current_client_id),
     db: AsyncSession = Depends(get_db_session),
 ):
     """Exclusão de conta."""
     try:
-        await db.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": uid})
+        await db.execute(text("DELETE FROM clients WHERE id = :uid"), {"uid": uid})
         await db.commit()
     except Exception:
         await db.rollback()

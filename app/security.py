@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 from jose import jwt
 from passlib.context import CryptContext
 from app.settings import settings
@@ -24,12 +24,22 @@ def get_password_hash(password: str) -> str:
     """
     return pwd_context.hash(password)
 
-def create_access_token(subject: str | Any, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(
+    subject: str | Any, 
+    expires_delta: Optional[timedelta] = None,
+    extra_claims: Optional[Dict[str, Any]] = None # <--- Adicionado aqui
+) -> str:
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_EXPIRES_MIN)
     
+    # 1. Cria o payload básico
     to_encode = {"exp": expire, "sub": str(subject)}
+
+    # 2. Se tiver dados extras (role, restaurant_id), adiciona no dicionário
+    if extra_claims:
+        to_encode.update(extra_claims)
+
     encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALG)
     return encoded_jwt

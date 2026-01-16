@@ -14,7 +14,7 @@ class ClientLoginRequest(BaseModel):
     fcm_token: Optional[str] = None
 
 # --- PROFILE & LOCATION ---
-class UserProfileResponse(BaseModel):
+class ClientProfileResponse(BaseModel):
     id: int
     name: str | None
     phone: str
@@ -24,7 +24,7 @@ class UserProfileResponse(BaseModel):
     level: int
     created_at: datetime
 
-class UserUpdateProfileRequest(BaseModel):
+class ClientUpdateProfileRequest(BaseModel):
     name: Optional[str] = None
     email: Optional[EmailStr] = None
     avatar_url: Optional[str] = None
@@ -38,7 +38,7 @@ class LocationUpdateSchema(BaseModel):
 class AcceptOfferResponse(BaseModel):
     status: str
     offer_id: int
-    user_id: int | None = None
+    client_id: int | None = None
     expires_at: datetime | None = None
     qr_token: str | None = None
     accepted_count: int | None = None

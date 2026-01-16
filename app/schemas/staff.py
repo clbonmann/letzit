@@ -190,7 +190,7 @@ class RedeemResponse(BaseModel):
     status: RedeemStatus
     offer_id: int
     claim_id: Optional[int] = None
-    user_id: Optional[int] = None
+    client_id: Optional[int] = None
     expires_at: Optional[datetime] = None
     redeemed_at: Optional[datetime] = None
     client_name: Optional[str] = None
@@ -198,7 +198,7 @@ class RedeemResponse(BaseModel):
     price_to_charge: Optional[int] = None
 
 class DebugAcceptRequest(BaseModel):
-    user_id: int
+    client_id: int
 
 class NoShowRequest(BaseModel):
     claim_id: Optional[int] = None
@@ -216,7 +216,7 @@ class DashboardStatsResponse(BaseModel):
 
 class AudienceBucket(BaseModel):
     radius_km: int
-    user_count: int
+    client_count: int
     label: str
 
 class AudienceStatsResponse(BaseModel):

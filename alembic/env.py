@@ -10,6 +10,8 @@ from alembic import context
 from app.settings import settings
 from app.models import Base 
 
+from geoalchemy2 import Geography
+
 config = context.config
 
 # Configuração de Log padrão do Alembic
@@ -86,6 +88,38 @@ async def run_migrations_online():
 
     await connectable.dispose()
 
+def include_object(object, name, type_, reflected, compare_to):
+    """
+    Filtro agressivo para impedir que o Alembic destrua o PostGIS.
+    """
+    if type_ == "table":
+        # Lista exata das tabelas do sistema de Mapas (PostGIS/Tiger)
+        # Copiada baseada no log gerado pelo Railway
+        ignored_tables = {
+            'spatial_ref_sys', 'layer', 'topology', 
+            'geography_columns', 'geometry_columns', 
+            'raster_columns', 'raster_overviews',
+            # Tabelas Tiger / Geocoder
+            'addr', 'addrfeat', 'bg', 'city_lookup', 'county', 'county_lookup', 
+            'cousub', 'countysub_lookup', 'direction_lookup', 'edges', 'faces', 
+            'featnames', 'geocode_settings', 'geocode_settings_default', 
+            'loader_lookuptables', 'loader_platform', 'loader_variables', 
+            'place', 'place_lookup', 'secondary_unit_lookup', 'state', 
+            'state_lookup', 'street_type_lookup', 'tabblock', 'tabblock20', 
+            'tract', 'zcta5', 'zip_lookup', 'zip_lookup_all', 'zip_lookup_base', 
+            'zip_state', 'zip_state_loc',
+            'pagc_gaz', 'pagc_lex', 'pagc_rules' 
+        }
+        
+        # 1. Se o nome estiver na lista exata, ignora
+        if name in ignored_tables:
+            return False
+            
+        # 2. Se começar com prefixos conhecidos do PostGIS, ignora
+        if name.startswith(("tiger_", "pagc_", "std_", "topology_")):
+            return False
+
+    return True
 
 def run_migrations_online_wrapper():
     asyncio.run(run_migrations_online())
