@@ -80,7 +80,7 @@ class RestaurantRead(BaseModel):
     long: Optional[float] = None
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class RestaurantUpdate(BaseModel):
     id: Optional[int] = None # Opcional para Staff, Obrigatório para Admin editar terceiros
