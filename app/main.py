@@ -3,6 +3,9 @@ from fastapi import FastAPI
 # 1. Client Routes (App Mobile)
 from app.routes import client_auth, client_feed, client_profile
 
+# Para funcioinar CORS na Vercel
+from fastapi.middleware.cors import CORSMiddleware
+
 # 2. Staff Routes (Painel Restaurante)
 from app.routes import (
     staff_auth, 
@@ -20,6 +23,18 @@ from app.routes import admin, admin_jobs
 app = FastAPI(title="LetzIT API")
 
 # --- Include Routers ---
+from fastapi import FastAPI
+ # <--- 1. Importe isso
+
+app = FastAPI(title="LetzIT API")
+# CORS Middleware Configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # <--- O Segredo: "*" libera geral (localhost, vercel, etc)
+    allow_credentials=True,
+    allow_methods=["*"],  # Libera GET, POST, PUT, DELETE...
+    allow_headers=["*"],  # Libera tokens e cabeçalhos
+)
 
 # Client
 app.include_router(client_auth.router)
