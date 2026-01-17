@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -17,10 +18,22 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy.sql import func
-
+from enum import Enum
 
 class Base(DeclarativeBase):
     pass
+
+# =========================
+# OFFER TYPE (OFFER)
+# =========================
+class OfferType(str, Enum):
+    DISCOUNT_OVER_BILL = "DISCOUNT_OVER_BILL"   # Desconto na conta final
+    PRODUCT_DISCOUNT = "PRODUCT_DISCOUNT"       # Desconto num prato específico
+    FREE_PRODUCT = "FREE_PRODUCT"               # Ganhe uma sobremesa/drink
+    TABLE_GUARANTEE = "TABLE_GUARANTEE"         # Reserva garantida (corrigi 'Garantee')
+    GIFT = "GIFT"                               # Brinde físico (boné, copo, etc)
+    TWO_GO_DISCOUNT = "2GO_DISCOUNT"            # Desconto pra retirar
+    TWO_GO_FREE_PRODUCT = "2GO_FREE_PRODUCT"    # Ganhe algo na retirada
 
 
 # =========================
@@ -109,6 +122,8 @@ class Restaurant(Base):
     # srid=4326 é o padrão GPS (WGS 84)
     geog = Column(Geography(geometry_type='POINT', srid=4326), nullable=True)
 
+    # Saldo em conta de KM
+    balance_km = Column(Integer, default=0, nullable=False)
 
 class RestaurantStaff(Base):
     __tablename__ = "restaurant_staff"
@@ -122,7 +137,7 @@ class RestaurantStaff(Base):
 
     name = Column(String, nullable=True)
     email = Column(String, nullable=False)
-    password_hash = Column(String, nullable=False)
+    password_hash = Column(String, nullable=True)
     role = Column(String, nullable=False)  # INTERNAL_ADMIN, REST_ADMIN, REST_STAFF
     is_active = Column(Boolean, nullable=False, default=True)
     
@@ -157,7 +172,7 @@ class Offer(Base):
         ForeignKey("restaurants.id", ondelete="CASCADE"),
         nullable=False,
     )
-
+    staff_id = Column(BigInteger, nullable=False)
     title = Column(String, nullable=False)
     message = Column(String, nullable=True)
     description = Column(Text, nullable=True)
@@ -172,6 +187,7 @@ class Offer(Base):
 
     start_at = Column(DateTime(timezone=True), server_default=func.now())
     end_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
 
     status = Column(
         String,
@@ -198,8 +214,14 @@ class Offer(Base):
     restaurant = relationship("Restaurant", back_populates="offers")
     targets = relationship("OfferTarget", back_populates="offer")
     claims = relationship("OfferClaim", back_populates="offer")
+    audience_estimate = Column(Integer, nullable=True)
 
-
+    offer_type = Column(String, nullable=False, default="DISCOUNT_OVER_BILL")
+    payment_method = Column(String, default="CREDITS") # "CREDITS" ou "PAY_AS_YOU_GO"
+    
+    # Quanto custou essa oferta (se foi em dinheiro)
+    cost_amount = Column(Numeric(10, 2), default=0.00)
+    
 class OfferTarget(Base):
     __tablename__ = "offer_targets"
 

@@ -1,0 +1,1 @@
+PRICE_PER_KM_ADHOC = 3.50  # Preço avulso para quem não tem pacote

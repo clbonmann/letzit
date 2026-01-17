@@ -1,19 +1,18 @@
 from __future__ import annotations
-
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import datetime, timezone, timedelta
 from uuid import uuid4
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
+# Imports Locais
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
-from app.perms_staff import require_admin
-from app.security import get_password_hash 
-# IMPORTANDO SCHEMAS
+from app.models import RestaurantStaff
+from app.security import get_password_hash # Certifique-se de importar o hash
 from app.schemas.staff import (
     StaffUserResponse, 
     InviteStaffRequest, 
@@ -21,87 +20,98 @@ from app.schemas.staff import (
     AdminResetPasswordRequest
 )
 
-router = APIRouter(prefix="/staff/team", tags=["staff-team"])
+router = APIRouter(prefix="/staff/team", tags=["Staff Team Management"])
 
-# --- HELPER: PERMISSÕES ---
-def get_target_restaurant_id(staff: dict, query_rid: Optional[int]) -> int:
-    """
-    Define qual restaurante está sendo manipulado.
-    - Se for INTERNAL_ADMIN (ID 1), pode passar query_rid para mexer em outros.
-    - Se for Admin Normal, só pode mexer no seu próprio.
-    """
-    logged_rid = int(staff["restaurant_id"])
-    is_super = (logged_rid == 1) 
+# ==============================================================================
+# HELPER: ENVIO DE EMAIL (MOCK)
+# ==============================================================================
+async def send_invite_email(email: str, name: str, token: str):
+    link = f"https://letzit.com/activate?token={token}"
+    print(f"📧 [EMAIL] Convite para {name} <{email}> | Link: {link}")
 
-    if is_super and query_rid:
-        return query_rid
-    
-    if query_rid and query_rid != logged_rid:
-        raise HTTPException(403, "Você não tem permissão para gerenciar equipes de outros restaurantes.")
-        
-    return logged_rid
-
-# --- ENDPOINTS ---
-
+# ==============================================================================
+# 1. LISTAR EQUIPE
+# ==============================================================================
 @router.get("", response_model=List[StaffUserResponse])
 async def list_team_members(
     restaurant_id: Optional[int] = Query(None, description="Filtro para Super Admin"),
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
 ):
-    """Lista todos os membros da equipe do restaurante."""
-    target_rid = get_target_restaurant_id(staff, restaurant_id)
+    logged_rid = int(staff["restaurant_id"])
+    target_rid = logged_rid
 
-    query = text("""
-        SELECT id, restaurant_id, email, name, role, is_active, created_at
-        FROM restaurant_staff
-        WHERE restaurant_id = :rid
-        ORDER BY created_at DESC
-    """)
+    # Lógica Super Admin
+    if staff.get("role") == "INTERNAL_ADMIN" and logged_rid == 1 and restaurant_id:
+        target_rid = restaurant_id
+
+    stmt = select(RestaurantStaff).where(
+        RestaurantStaff.restaurant_id == target_rid
+    ).order_by(RestaurantStaff.created_at.desc())
     
-    rows = (await db.execute(query, {"rid": target_rid})).mappings().all()
-    return [StaffUserResponse(**r) for r in rows]
+    result = await db.execute(stmt)
+    return result.scalars().all()
 
-
+# ==============================================================================
+# 2. CONVIDAR (INVITE)
+# ==============================================================================
 @router.post("/invite", response_model=StaffUserResponse)
 async def invite_team_member(
     payload: InviteStaffRequest,
-    restaurant_id: Optional[int] = Query(None, description="Alvo para Super Admin"),
+    restaurant_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
 ):
-    """Cria um novo funcionário (Convite)."""
-    require_admin(staff)
-    target_rid = get_target_restaurant_id(staff, restaurant_id)
+    # Verificação de Permissão
+    if staff.get("role") not in ["REST_ADMIN", "INTERNAL_ADMIN"]:
+        raise HTTPException(403, "Apenas Admins podem convidar.")
+
     logged_rid = int(staff["restaurant_id"])
+    target_rid = logged_rid
 
+    if staff.get("role") == "INTERNAL_ADMIN" and logged_rid == 1 and restaurant_id:
+        target_rid = restaurant_id
+    
     if payload.role == "INTERNAL_ADMIN" and logged_rid != 1:
-        raise HTTPException(403, "Apenas a LetzIT pode criar Super Admins.")
+        raise HTTPException(403, "Você não pode criar Super Admins.")
 
-    token = uuid4()
+    # 1. Check Duplicidade
+    stmt_check = select(RestaurantStaff).where(RestaurantStaff.email == payload.email.lower())
+    existing = (await db.execute(stmt_check)).scalar_one_or_none()
+    if existing:
+        raise HTTPException(409, "Este e-mail já está cadastrado.")
+
+    # 2. Prepara Dados
+    token = str(uuid4())
     expires = datetime.now(timezone.utc) + timedelta(hours=48)
 
+    new_staff = RestaurantStaff(
+        restaurant_id=target_rid,
+        email=payload.email.lower(),
+        role=payload.role,
+        name=payload.name,
+        is_active=False,
+        password_hash=None, # Permitido pois mudamos o banco
+        activation_token=token,
+        activation_expires_at=expires,
+        created_at=datetime.now(timezone.utc)
+    )
+
     try:
-        row = (await db.execute(
-            text("""
-                INSERT INTO restaurant_staff (restaurant_id, email, role, name, is_active, password_hash, activation_token, activation_expires_at, created_at)
-                VALUES (:rid, :email, :role, :name, FALSE, NULL, :tok, :exp, NOW())
-                RETURNING id, restaurant_id, email, name, role, is_active, created_at
-            """),
-            {
-                "rid": target_rid, "email": payload.email.lower(), "role": payload.role, "name": payload.name, "tok": str(token), "exp": expires
-            }
-        )).mappings().first()
-        
+        db.add(new_staff)
         await db.commit()
-        # TODO: Enviar email com link: f"https://app.letzit.com/staff/activate?token={token}"
-        return StaffUserResponse(**row)
+        await db.refresh(new_staff)
+        
+        await send_invite_email(new_staff.email, new_staff.name, token)
+        return new_staff
 
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(409, "Este e-mail já está cadastrado na equipe.")
+        raise HTTPException(400, "Erro ao criar usuário.")
 
-
+# ==============================================================================
+# 3. ATUALIZAR (UPDATE) - Refatorado para ORM
+# ==============================================================================
 @router.patch("/{staff_id}", response_model=StaffUserResponse)
 async def update_team_member(
     staff_id: int,
@@ -109,36 +119,43 @@ async def update_team_member(
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
 ):
-    """Atualiza dados de um membro (Nome, Cargo, Ativar/Desativar)."""
-    require_admin(staff)
-    
-    target_user = (await db.execute(text("SELECT restaurant_id FROM restaurant_staff WHERE id = :sid"), {"sid": staff_id})).mappings().first()
-    if not target_user: raise HTTPException(404, "Funcionário não encontrado.")
+    if staff.get("role") not in ["REST_ADMIN", "INTERNAL_ADMIN"]:
+        raise HTTPException(403, "Sem permissão.")
 
-    get_target_restaurant_id(staff, target_user.restaurant_id)
+    # Busca o usuário alvo
+    stmt = select(RestaurantStaff).where(RestaurantStaff.id == staff_id)
+    result = await db.execute(stmt)
+    target_user = result.scalar_one_or_none()
 
+    if not target_user:
+        raise HTTPException(404, "Funcionário não encontrado.")
+
+    # Validação de acesso a outros restaurantes
+    logged_rid = int(staff["restaurant_id"])
+    if target_user.restaurant_id != logged_rid and staff.get("role") != "INTERNAL_ADMIN":
+         raise HTTPException(403, "Você só pode editar sua própria equipe.")
+
+    # Bloqueio: não desativar a si mesmo
     if int(staff["id"]) == staff_id and payload.is_active is False:
         raise HTTPException(400, "Você não pode desativar sua própria conta.")
 
-    try:
-        row = (await db.execute(
-            text("""
-                UPDATE restaurant_staff
-                SET name = COALESCE(:name, name), role = COALESCE(:role, role), is_active = COALESCE(:active, is_active), updated_at = NOW()
-                WHERE id = :sid
-                RETURNING id, restaurant_id, email, name, role, is_active, created_at
-            """),
-            {"sid": staff_id, "name": payload.name, "role": payload.role, "active": payload.is_active}
-        )).mappings().first()
-        
-        await db.commit()
-        return StaffUserResponse(**row)
-        
-    except Exception:
-        await db.rollback()
-        raise HTTPException(500, "Erro ao atualizar funcionário.")
+    # Atualização Pythonica (ORM)
+    if payload.name is not None:
+        target_user.name = payload.name
+    if payload.role is not None:
+        target_user.role = payload.role
+    if payload.is_active is not None:
+        target_user.is_active = payload.is_active
+    
+    target_user.updated_at = datetime.now(timezone.utc)
 
+    await db.commit()
+    await db.refresh(target_user)
+    return target_user
 
+# ==============================================================================
+# 4. RESET SENHA (ADMIN) - Refatorado para ORM
+# ==============================================================================
 @router.post("/{staff_id}/reset-password")
 async def admin_reset_password(
     staff_id: int,
@@ -146,22 +163,52 @@ async def admin_reset_password(
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
 ):
-    """Gerente reseta a senha de um funcionário."""
-    require_admin(staff)
+    if staff.get("role") not in ["REST_ADMIN", "INTERNAL_ADMIN"]:
+        raise HTTPException(403, "Sem permissão.")
 
-    target_user = (await db.execute(text("SELECT restaurant_id, role FROM restaurant_staff WHERE id = :sid"), {"sid": staff_id})).mappings().first()
-    if not target_user: raise HTTPException(404, "Funcionário não encontrado.")
+    stmt = select(RestaurantStaff).where(RestaurantStaff.id == staff_id)
+    target_user = (await db.execute(stmt)).scalar_one_or_none()
 
-    get_target_restaurant_id(staff, target_user.restaurant_id)
+    if not target_user:
+        raise HTTPException(404, "Funcionário não encontrado.")
 
-    if staff.get("role") != "INTERNAL_ADMIN" and target_user.role == "INTERNAL_ADMIN":
-        raise HTTPException(403, "Você não tem permissão para alterar senha de um Super Admin.")
+    # Segurança Super Admin
+    if target_user.role == "INTERNAL_ADMIN" and staff.get("role") != "INTERNAL_ADMIN":
+        raise HTTPException(403, "Você não pode resetar senha de um Super Admin.")
 
-    await db.execute(
-        text("UPDATE restaurant_staff SET password_hash = :ph, updated_at = NOW() WHERE id = :sid"),
-        {"ph": get_password_hash(payload.new_password), "sid": staff_id}
-    )
+    target_user.password_hash = get_password_hash(payload.new_password)
+    target_user.updated_at = datetime.now(timezone.utc)
+    
     await db.commit()
 
-    return {"message": f"Senha do funcionário ID {staff_id} foi resetada com sucesso."}
+    return {"message": f"Senha de {target_user.name} foi alterada."}
 
+# ==============================================================================
+# 5. REMOVER (DELETE)
+# ==============================================================================
+@router.delete("/{staff_id}")
+async def remove_team_member(
+    staff_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    staff: dict = Depends(get_current_staff)
+):
+    if staff.get("role") not in ["REST_ADMIN", "INTERNAL_ADMIN"]:
+        raise HTTPException(403, "Sem permissão.")
+    
+    stmt = select(RestaurantStaff).where(RestaurantStaff.id == staff_id)
+    target_user = (await db.execute(stmt)).scalar_one_or_none()
+
+    if not target_user:
+        raise HTTPException(404, "Funcionário não encontrado.")
+    
+    # Validações de segurança (mesmo restaurante, não se deletar)...
+    if target_user.restaurant_id != int(staff["restaurant_id"]) and staff.get("role") != "INTERNAL_ADMIN":
+        raise HTTPException(403, "Acesso negado.")
+
+    if target_user.id == int(staff["id"]):
+        raise HTTPException(400, "Você não pode remover a si mesmo.")
+
+    await db.delete(target_user)
+    await db.commit()
+
+    return {"message": "Funcionário removido."}

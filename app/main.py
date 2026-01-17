@@ -10,7 +10,8 @@ from app.routes import (
     staff_offers, 
     staff_team, 
     staff_pos, 
-    staff_stats
+    staff_stats, 
+    staff_packages
 )
 
 # 3. Admin Routes (Backoffice)
@@ -32,6 +33,7 @@ app.include_router(staff_offers.router)
 app.include_router(staff_team.router)
 app.include_router(staff_pos.router)
 app.include_router(staff_stats.router)
+app.include_router(staff_packages.router)
 
 # Admin
 app.include_router(admin.router)

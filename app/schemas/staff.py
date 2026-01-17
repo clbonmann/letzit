@@ -4,6 +4,8 @@ from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field
 from enum import Enum
 
+from app.models import OfferType
+
 # --- AUTH ---
 class StaffLoginRequest(BaseModel):
     email: EmailStr
@@ -106,6 +108,7 @@ class QuoteResponse(BaseModel):
     placement: Placement
     radius_km: int
     price_cents: int
+    wallet_balance_km: int = 0
     audience_estimate: int
     city: str | None = None
     max_slots: int | None = None
@@ -114,25 +117,40 @@ class QuoteResponse(BaseModel):
     status: str | None = None
 
 class CreateOfferRequest(BaseModel):
-    placement: Placement = "NORMAL"
+    placement: Placement = "NORMAL" 
     radius_km: int | None = Field(default=None, ge=1, le=50)
     active_minutes: int = Field(30, ge=1, le=240)
+    offer_type: OfferType = OfferType.DISCOUNT_OVER_BILL
     city: str | None = None
     title: str | None = Field(default=None, max_length=80)
     message: str | None = Field(default=None, max_length=300)
     accept_limit: int = Field(25, ge=1, le=500)
     max_target_total: int = Field(100, ge=1, le=5000)
+    start_at: Optional[datetime] = None
+    end_at: Optional[datetime] = None
+    active_minutes: Optional[int] = None
+    audience_estimate: Optional[int] = None
 
 class CreateOfferResponse(BaseModel):
     offer_id: int
-    placement: Placement
-    radius_km: int
-    price_cents: int
-    audience_estimate: int
-    city: str | None = None
-    slot_status: str | None = None
+    staff_id: int
+    placement: Placement | None = None
+    offer_type: OfferType = OfferType.DISCOUNT_OVER_BILL
+    radius_km: int | None = Field(default=None, ge=1, le=50)
+    title: str | None = Field(default=None, max_length=80)
+    message: str | None = Field(default=None, max_length=300)
+    accept_limit: int | None = Field(default=None, ge=1, le=500)
+    max_target_total: int | None = Field(default=None, ge=1, le=5000)
+    accept_ttl_hours: int | None = Field(default=None, ge=1, le=72)
+    audience_estimate: Optional[int] = None
+    price_cents: Optional[int] = None
+    start_at: Optional[datetime] = None
+    end_at: Optional[datetime] = None
+    status: str | None = Field(default=None, max_length=80)
 
 class UpdateCreatedOfferRequest(BaseModel):
+    offer_id: int
+    staff_id: int
     placement: Placement | None = None
     radius_km: int | None = Field(default=None, ge=1, le=50)
     title: str | None = Field(default=None, max_length=80)
@@ -143,6 +161,7 @@ class UpdateCreatedOfferRequest(BaseModel):
 
 class UpdateCreatedOfferResponse(BaseModel):
     offer_id: int
+    staff_id: int
     status: str
     placement: str
     radius_km: int | None = None
