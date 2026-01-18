@@ -35,5 +35,13 @@ OFFER_TYPE_METADATA = {
         "label": "Brinde na Retirada",
         "description": "Item grátis exclusivo para pedidos 'To Go'.",
         "icon": "🛍️"
+        
+    },
+    "SPECIAL_PRICE_PRODUCT": {
+        "label": "Produto com preço promocional!",
+        "description": "Produto com preço imperdível.",
+        "icon": "🔥"
+        
     }
+    
 }
