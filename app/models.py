@@ -27,13 +27,14 @@ class Base(DeclarativeBase):
 # OFFER TYPE (OFFER)
 # =========================
 class OfferType(str, Enum):
-    DISCOUNT_OVER_BILL = "DISCOUNT_OVER_BILL"   # Desconto na conta final
-    PRODUCT_DISCOUNT = "PRODUCT_DISCOUNT"       # Desconto num prato específico
-    FREE_PRODUCT = "FREE_PRODUCT"               # Ganhe uma sobremesa/drink
-    TABLE_GUARANTEE = "TABLE_GUARANTEE"         # Reserva garantida (corrigi 'Garantee')
-    GIFT = "GIFT"                               # Brinde físico (boné, copo, etc)
-    TWO_GO_DISCOUNT = "2GO_DISCOUNT"            # Desconto pra retirar
-    TWO_GO_FREE_PRODUCT = "2GO_FREE_PRODUCT"    # Ganhe algo na retirada
+    DISCOUNT_OVER_BILL = "DISCOUNT_OVER_BILL"                   # Desconto na conta final
+    PRODUCT_DISCOUNT = "PRODUCT_DISCOUNT"                       # Desconto num prato específico
+    FREE_PRODUCT = "FREE_PRODUCT"                               # Ganhe uma sobremesa/drink
+    TABLE_GUARANTEE = "TABLE_GUARANTEE"                         # Reserva garantida (corrigi 'Garantee')
+    GIFT = "GIFT"                                               # Brinde físico (boné, copo, etc)
+    TWO_GO_DISCOUNT = "2GO_DISCOUNT"                            # Desconto pra retirar
+    TWO_GO_FREE_PRODUCT = "2GO_FREE_PRODUCT"                    # Ganhe algo na retirada
+    SPECIAL_PRICE_PRODUCT = "SPECIAL_PRICE_PRODUCT"             # Produto com preço especial
 
 
 # =========================
