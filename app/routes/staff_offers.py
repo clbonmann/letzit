@@ -385,5 +385,30 @@ async def publish_offer(
         start_at=offer.start_at,
         end_at=offer.end_at
     )
-
+@router.get("/{offer_id}")
+async def get_offer_details(
+    offer_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    staff: dict = Depends(get_current_staff),
+):
+    """Retorna todos os dados de uma oferta específica para duplicação."""
+    rid = int(staff["restaurant_id"])
+    
+    # Busca a oferta garantindo que pertence ao restaurante logado
+    query = text("""
+        SELECT 
+            id, restaurant_id, placement, offer_type, radius_km, 
+            city, title, message, accept_limit, 
+            audience_estimate, price_cents, 
+            start_at, end_at, status
+        FROM offers
+        WHERE id = :oid AND restaurant_id = :rid
+    """)
+    
+    row = (await db.execute(query, {"oid": offer_id, "rid": rid})).mappings().first()
+    
+    if not row:
+        raise HTTPException(404, "Oferta não encontrada.")
+        
+    return row
 # (Os demais endpoints Update, Close, Repeat seguem o mesmo padrão: Mude apenas a classe do Payload no argumento da função)
