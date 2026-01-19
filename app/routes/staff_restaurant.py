@@ -144,7 +144,27 @@ async def upload_restaurant_logo(
     restaurant_id = int(staff["restaurant_id"])
 
     try:
-        url = upload_image(file, folder=f"restaurants/{restaurant_id}")
+        # Definimos a transformação aqui:
+        # width/height 500: Garante boa qualidade (retina) mas leve.
+        # crop="fill": Corta o excesso para preencher o quadrado (não estica).
+        # gravity="center": Tenta manter o centro da imagem.
+        transformations = {
+            "width": 150, 
+            "height": 150, 
+            "crop": "fill", 
+            "gravity": "center",
+            "format": "jpg",    # Converte para JPG para ficar mais leve
+            "quality": "auto"   # Otimiza compressão automaticamente
+        }
+
+        # ATENÇÃO: Verifique se sua função upload_image aceita **kwargs ou um parametro 'transformation'
+        # Se não aceitar, veja o Passo 1.1 abaixo.
+        url = upload_image(
+            file, 
+            folder=f"restaurants/{restaurant_id}",
+            transformation=transformations 
+        )
+        
     except Exception as e:
         print(f"Upload Error: {e}")
         raise HTTPException(500, "Falha no upload da imagem.")

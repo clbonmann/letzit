@@ -13,9 +13,11 @@ cloudinary.config(
 
 ALLOWED_EXTENSIONS = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
 
-def upload_image(file: UploadFile, folder: str) -> str:
+# ALTERAÇÃO: Adicionado parametro opcional 'transformation'
+def upload_image(file: UploadFile, folder: str, transformation: dict = None) -> str:
     """
     Envia para o Cloudinary e retorna a URL segura (https).
+    Aceita dicionário de transformação (crop, resize, etc).
     """
     
     # 1. Validação simples
@@ -24,11 +26,12 @@ def upload_image(file: UploadFile, folder: str) -> str:
 
     try:
         # 2. Upload Mágico
-        # O Cloudinary aceita o arquivo direto (file.file)
         response = cloudinary.uploader.upload(
             file.file,
-            folder=folder, # Ex: "restaurante_257"
-            resource_type="image"
+            folder=folder, 
+            resource_type="image",
+            # AQUI ESTÁ A MÁGICA: Repassa as regras de corte para o Cloudinary
+            transformation=transformation 
         )
         
         # 3. Retorna a URL otimizada
