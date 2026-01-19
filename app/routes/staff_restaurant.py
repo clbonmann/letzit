@@ -145,16 +145,17 @@ async def upload_restaurant_logo(
 
     try:
         # Definimos a transformação aqui:
-        # width/height 500: Garante boa qualidade (retina) mas leve.
+        # width/height 500: Garante boa qualidade (retina) mas leve.Otptei por 150 para as logos.
         # crop="fill": Corta o excesso para preencher o quadrado (não estica).
         # gravity="center": Tenta manter o centro da imagem.
         transformations = {
             "width": 150, 
             "height": 150, 
-            "crop": "fill", 
+            "crop": "pad",       # <--- MUDOU DE 'fill' PARA 'pad'
+            "background": "white", # <--- Cor do fundo para preencher o espaço vazio
             "gravity": "center",
-            "format": "jpg",    # Converte para JPG para ficar mais leve
-            "quality": "auto"   # Otimiza compressão automaticamente
+            "quality": "auto",
+            "fetch_format": "auto"
         }
 
         # ATENÇÃO: Verifique se sua função upload_image aceita **kwargs ou um parametro 'transformation'
