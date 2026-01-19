@@ -244,3 +244,12 @@ class AudienceStatsResponse(BaseModel):
     breakdown: List[AudienceBucket]
     computed_at: datetime
 
+class TaxItem(BaseModel):
+    id: int
+    slug: str
+    name: str
+
+class RestaurantTaxonomyResponse(BaseModel):
+    cuisine_types: list[TaxItem]
+    cuisine_features: list[TaxItem]
+    space_features: list[TaxItem]

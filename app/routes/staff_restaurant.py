@@ -13,8 +13,8 @@ from app.deps_staff import get_current_staff
 # Certifique-se que estes utilitários existem no seu projeto:
 from app.utils.cnpj import normalize_cnpj 
 from app.services.storage import upload_image 
-# IMPORTANDO SCHEMAS (Agora do lugar certo)
-from app.schemas.staff import RestaurantRead, RestaurantUpdate
+# IMPORTANDO SCHEMAS 
+from app.schemas.staff import RestaurantRead, RestaurantUpdate, RestaurantTaxonomyResponse, TaxItem
 
 router = APIRouter(prefix="/staff/restaurant", tags=["staff-restaurant"])
 
@@ -177,3 +177,35 @@ async def upload_restaurant_logo(
     await db.commit()
 
     return {"status": "success", "logo_url": url}
+
+@router.get("/taxonomy", response_model=RestaurantTaxonomyResponse)
+async def get_restaurant_taxonomy(
+    db: AsyncSession = Depends(get_db_session),
+    staff: dict = Depends(get_current_staff),
+) -> RestaurantTaxonomyResponse:
+    # qualquer staff pode ler
+    types_ = (await db.execute(text("""
+        SELECT id, slug, name
+        FROM cuisine_types
+        WHERE is_active = true
+        ORDER BY name
+    """))).mappings().all()
+
+    cfeat = (await db.execute(text("""
+        SELECT id, slug, name
+        FROM cuisine_features
+        WHERE is_active = true
+        ORDER BY name
+    """))).mappings().all()
+
+    sfeat = (await db.execute(text("""
+        SELECT id, slug, name
+        FROM space_features
+        WHERE is_active = true
+        ORDER BY name
+    """))).mappings().all()
+    return RestaurantTaxonomyResponse(
+        cuisine_types=[TaxItem(**r) for r in types_],
+        cuisine_features=[TaxItem(**r) for r in cfeat],
+        space_features=[TaxItem(**r) for r in sfeat],
+    )
