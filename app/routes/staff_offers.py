@@ -3,35 +3,32 @@ from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import insert, text, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError
 from geoalchemy2.functions import ST_DWithin
 from enum import Enum
+
+# Imports do App
+from app.db import get_db_session
+from app.deps_staff import get_current_staff
 from app.constants.pricing import PRICE_PER_KM_ADHOC
 from app.constants.offer_types import OFFER_TYPE_METADATA
 
-from fastapi import APIRouter, Depends
-from app.models import OfferType
-
-from app.db import get_db_session
-from app.deps_staff import get_current_staff
-# IMPORTANDO SCHEMAS
+# Models e Schemas
 from app.models import Offer, OfferTarget, Restaurant, Client, OfferType
 from app.schemas.staff import (
     QuoteRequest, QuoteResponse, CreateOfferRequest, CreateOfferResponse,
-    UpdateCreatedOfferRequest, UpdateCreatedOfferResponse,
-    CloseOfferRequest, CloseOfferResponse, RepeatOfferRequest, RepeatOfferResponse
+    CloseOfferResponse
 )
 
 router = APIRouter(prefix="/staff/offers", tags=["staff-offers"])
 
 # --- FUNÇÕES AUXILIARES ---
 def _staff_id(staff: dict) -> int: return int(staff.get("id") or staff.get("id"))
-def _normalize_city(s: str) -> str: return s.strip().lower().replace(" ", "_").replace("-", "_")
 def _utc_day_window(now: datetime) -> tuple: return datetime(now.year, now.month, now.day, tzinfo=timezone.utc), datetime(now.year, now.month, now.day, tzinfo=timezone.utc) + timedelta(days=1)
 
-# --- ENDPOINT 1: LISTAR (CORRIGIDO) ---
-@router.get("", summary="List Offers")
+# --- ENDPOINT 1: LISTAR (AGORA HÍBRIDO: LISTA OU DETALHE) ---
+@router.get("", summary="List or Get Offer")
 async def list_staff_offers(
+    offer_id: int | None = Query(None, description="Se enviado, filtra por esta oferta específica"),
     status: str | None = Query(None), 
     placement: str | None = Query(None), 
     limit: int = Query(50), 
@@ -39,10 +36,9 @@ async def list_staff_offers(
     staff: dict = Depends(get_current_staff)
     ):
     """
-    Lista as ofertas.
-    CORREÇÃO: Removido 'o.city' que não existe no banco.
-    Mantido 'offer_type' e 'audience_estimate'.
+    Lista ofertas. Se 'offer_id' for informado, retorna apenas aquela oferta (útil para Repeat).
     """
+    # Query completa com todos os campos necessários para o Frontend (incluindo Repeat)
     sql = """
         SELECT 
             o.id, 
@@ -50,14 +46,15 @@ async def list_staff_offers(
             o.message, 
             o.placement, 
             o.radius_km, 
-            o.price_cents, 
+            o.price_cents,
+            o.origin_price_cents, 
             o.status, 
             o.accept_limit, 
             o.accepted_count, 
             o.created_at, 
             o.end_at,
-            o.offer_type,        -- Necessário para o frontend
-            o.audience_estimate, -- Necessário para o frontend
+            o.offer_type,        
+            o.audience_estimate, 
             COUNT(c.id) FILTER (WHERE c.status='REDEEMED')::int AS redeemed_count, 
             COUNT(c.id) FILTER (WHERE c.status='NO_SHOW')::int AS no_show_count 
         FROM offers o 
@@ -67,6 +64,14 @@ async def list_staff_offers(
     
     params = {"rid": int(staff["restaurant_id"]), "limit": limit}
     
+    # --- FILTROS DINÂMICOS ---
+    
+    # 1. Filtro por ID (Prioridade para detalhes/repeat)
+    if offer_id:
+        sql += " AND o.id = :oid"
+        params["oid"] = offer_id
+    
+    # 2. Outros filtros (só aplicam se não for busca por ID específico, ou cumulativo)
     if status: 
         sql += " AND o.status = :status"
         params["status"] = status
@@ -76,7 +81,9 @@ async def list_staff_offers(
         
     sql += " GROUP BY o.id ORDER BY o.created_at DESC LIMIT :limit"
     
-    return (await db.execute(text(sql), params)).mappings().all()
+    result = (await db.execute(text(sql), params)).mappings().all()
+    
+    return result
 
 # --- ENDPOINT 2: COTAÇÃO ---
 @router.post("/quote", response_model=QuoteResponse)
@@ -95,7 +102,7 @@ async def quote_offer(
     if not rest or not rest.geog:
         raise HTTPException(400, "Localização do restaurante inválida.")
 
-    # LÓGICA 1: PLACEMENT "NORMAL"
+    # PLACEMENT "NORMAL"
     if payload.placement == "NORMAL":
         if not payload.radius_km:
             raise HTTPException(400, "radius_km é obrigatório para placement NORMAL.")
@@ -110,10 +117,12 @@ async def quote_offer(
         aud_result = await db.execute(stmt_aud)
         audience = aud_result.scalar() or 0
 
-        # Calcular Preço (Saldo KM)
+        # Calcular Preço
         price_cents = 0
         quote_msg = ""
+
         if rest.balance_km >= radius_km:
+            price_cents = 0
             quote_msg = f"Coberto pelo seu pacote (Saldo atual: {rest.balance_km}km)"
         else:
             price_amount = radius_km * PRICE_PER_KM_ADHOC
@@ -126,10 +135,10 @@ async def quote_offer(
             price_cents=price_cents,
             wallet_balance_km=rest.balance_km,
             audience_estimate=audience,
-            message=quote_msg 
+            message=quote_msg
         )
 
-    # LÓGICA 2: PLACEMENT "CITY_HOME"
+    # PLACEMENT "CITY_HOME"
     if payload.placement == "CITY_HOME":
         fixed_radius = 20
         fixed_price = 5000 
@@ -145,8 +154,7 @@ async def quote_offer(
             price_cents=fixed_price,
             wallet_balance_km=rest.balance_km,
             audience_estimate=audience,
-            city=rest.city or "Unknown",
-            status="AVAILABLE", 
+            status="AVAILABLE",
             message="Destaque na Home da Cidade"
         )
 
@@ -163,7 +171,7 @@ async def create_offer(
     staff_id = int(staff["id"])
     now = datetime.now(timezone.utc)
 
-    # 1. CÁLCULO DAS DATAS
+    # --- 1. CÁLCULO DAS DATAS ---
     start_time = payload.start_at if payload.start_at else now
 
     if payload.end_at:
@@ -176,7 +184,7 @@ async def create_offer(
     if end_time <= start_time:
         raise HTTPException(status_code=400, detail="A data de término deve ser posterior à data de início.")
 
-    # 2. GEO E AUDIENCIA
+    # --- 2. Busca Geolocation ---
     stmt_rest = select(Restaurant.geog).where(Restaurant.id == rid)
     result_rest = await db.execute(stmt_rest)
     restaurant_geog = result_rest.scalar_one_or_none()
@@ -184,6 +192,7 @@ async def create_offer(
     if not restaurant_geog:
         raise HTTPException(400, "Restaurante sem localização cadastrada.")
 
+    # --- 3. Calcular Audiência ---
     radius_meters = (payload.radius_km or 20) * 1000
     stmt_count = select(func.count(Client.id)).where(
         ST_DWithin(Client.geog, restaurant_geog, radius_meters)
@@ -191,10 +200,9 @@ async def create_offer(
     result_count = await db.execute(stmt_count)
     audience_estimate = result_count.scalar() or 0
 
-    # 3. CRIAR OBJETO
+    # --- 4. Criar Objeto ---
     initial_status = "CREATED" if start_time <= now else "SCHEDULED"
     
-    # Tratamento Enum
     offer_type_val = payload.offer_type.value if hasattr(payload.offer_type, 'value') else payload.offer_type
 
     new_offer = Offer(
@@ -209,10 +217,10 @@ async def create_offer(
         radius_km=payload.radius_km,
         placement=payload.placement,
         price_cents=payload.price_cents or 0,
+        original_price_cents=payload.original_price_cents or 0,
         accept_limit=payload.accept_limit,
         max_target_total=payload.max_target_total,
         audience_estimate=audience_estimate,
-        city=payload.city,
         created_at=now,
         updated_at=now
     )
@@ -227,6 +235,7 @@ async def create_offer(
         placement=new_offer.placement,
         radius_km=new_offer.radius_km,
         price_cents=new_offer.price_cents,
+        original_price_cents=new_offer.original_price_cents,
         title=new_offer.title,
         message=new_offer.description,
         accept_limit=new_offer.accept_limit,
@@ -278,11 +287,7 @@ async def close_offer(
 async def get_offer_types(staff: dict = Depends(get_current_staff)):
     response = []
     for type_enum in OfferType:
-        meta = OFFER_TYPE_METADATA.get(type_enum.value, {
-            "label": type_enum.value, 
-            "description": "Oferta especial",
-            "icon": "🏷️"
-        })
+        meta = OFFER_TYPE_METADATA.get(type_enum.value, {"label": type_enum.value, "description": "Oferta especial", "icon": "🏷️"})
         response.append({
             "value": type_enum.value,
             "label": meta["label"],
@@ -318,7 +323,7 @@ async def publish_offer(
     if not restaurant:
         raise HTTPException(404, "Restaurante não encontrado.")
 
-    # LÓGICA DE COBRANÇA
+    # COBRANÇA
     radius_needed = int(offer.radius_km or 20)
     cost_in_money = 0.0
     payment_method = "CREDITS"
@@ -350,15 +355,7 @@ async def publish_offer(
     client_ids = clients_result.scalars().all()
 
     if client_ids:
-        targets_data = [
-            {
-                "offer_id": offer.id, 
-                "client_id": cid, 
-                "status": "PENDING", 
-                "created_at": now
-            } 
-            for cid in client_ids
-        ]
+        targets_data = [{"offer_id": offer.id, "client_id": cid, "status": "PENDING", "created_at": now} for cid in client_ids]
         await db.execute(insert(OfferTarget), targets_data)
 
     offer.updated_at = now
@@ -378,29 +375,4 @@ async def publish_offer(
         end_at=offer.end_at
     )
 
-# --- ENDPOINT 7: DETALHES ---
-@router.get("/{offer_id}")
-async def get_offer_details(
-    offer_id: int,
-    db: AsyncSession = Depends(get_db_session),
-    staff: dict = Depends(get_current_staff),
-):
-    """Retorna todos os dados de uma oferta específica."""
-    rid = int(staff["restaurant_id"])
-    
-    query = text("""
-        SELECT 
-            id, restaurant_id, placement, offer_type, radius_km, 
-            city, title, message, accept_limit, 
-            audience_estimate, price_cents, 
-            start_at, end_at, status
-        FROM offers
-        WHERE id = :oid AND restaurant_id = :rid
-    """)
-    
-    row = (await db.execute(query, {"oid": offer_id, "rid": rid})).mappings().first()
-    
-    if not row:
-        raise HTTPException(404, "Oferta não encontrada.")
-        
-    return row
+# A FUNÇÃO 'get_offer_details' FOI REMOVIDA POIS AGORA 'list_staff_offers' COM 'offer_id' FAZ A MESMA FUNÇÃO.

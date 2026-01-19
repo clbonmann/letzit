@@ -126,6 +126,8 @@ class CreateOfferRequest(BaseModel):
     message: str | None = Field(default=None, max_length=300)
     accept_limit: int = Field(25, ge=1, le=500)
     max_target_total: int = Field(100, ge=1, le=5000)
+    original_price_cents: Optional[int] = None
+    price_cents: Optional[int] = None
     start_at: Optional[datetime] = None
     end_at: Optional[datetime] = None
     active_minutes: Optional[int] = None
@@ -143,6 +145,7 @@ class CreateOfferResponse(BaseModel):
     max_target_total: int | None = Field(default=None, ge=1, le=5000)
     accept_ttl_hours: int | None = Field(default=None, ge=1, le=72)
     audience_estimate: Optional[int] = None
+    original_price_cents: Optional[int] = None
     price_cents: Optional[int] = None
     start_at: Optional[datetime] = None
     end_at: Optional[datetime] = None
