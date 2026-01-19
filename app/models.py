@@ -14,34 +14,112 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    Table,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy.sql import func
 from enum import Enum
 
+
 class Base(DeclarativeBase):
     pass
+
 
 # =========================
 # OFFER TYPE (OFFER)
 # =========================
 class OfferType(str, Enum):
-    DISCOUNT_OVER_BILL = "DISCOUNT_OVER_BILL"                   # Desconto na conta final
-    PRODUCT_DISCOUNT = "PRODUCT_DISCOUNT"                       # Desconto num prato específico
-    FREE_PRODUCT = "FREE_PRODUCT"                               # Ganhe uma sobremesa/drink
-    TABLE_GUARANTEE = "TABLE_GUARANTEE"                         # Reserva garantida (corrigi 'Garantee')
-    GIFT = "GIFT"                                               # Brinde físico (boné, copo, etc)
-    TWO_GO_DISCOUNT = "2GO_DISCOUNT"                            # Desconto pra retirar
-    TWO_GO_FREE_PRODUCT = "2GO_FREE_PRODUCT"                    # Ganhe algo na retirada
-    SPECIAL_PRICE_PRODUCT = "SPECIAL_PRICE_PRODUCT"             # Produto com preço especial
+    DISCOUNT_OVER_BILL = "DISCOUNT_OVER_BILL"
+    PRODUCT_DISCOUNT = "PRODUCT_DISCOUNT"
+    FREE_PRODUCT = "FREE_PRODUCT"
+    TABLE_GUARANTEE = "TABLE_GUARANTEE"
+    GIFT = "GIFT"
+    TWO_GO_DISCOUNT = "2GO_DISCOUNT"
+    TWO_GO_FREE_PRODUCT = "2GO_FREE_PRODUCT"
+    SPECIAL_PRICE_PRODUCT = "SPECIAL_PRICE_PRODUCT"
+
+
+# ==========================================================
+# RESTAURANT TAXONOMY (NEW): Cuisine Types / Features / Space
+# ==========================================================
+
+# Association tables (many-to-many)
+restaurant_cuisine_types = Table(
+    "restaurant_cuisine_types",
+    Base.metadata,
+    Column("restaurant_id", BigInteger, ForeignKey("restaurants.id", ondelete="CASCADE"), primary_key=True),
+    Column("cuisine_type_id", BigInteger, ForeignKey("cuisine_types.id"), primary_key=True),
+)
+
+restaurant_cuisine_features = Table(
+    "restaurant_cuisine_features",
+    Base.metadata,
+    Column("restaurant_id", BigInteger, ForeignKey("restaurants.id", ondelete="CASCADE"), primary_key=True),
+    Column("feature_id", BigInteger, ForeignKey("cuisine_features.id"), primary_key=True),
+)
+
+restaurant_space_features = Table(
+    "restaurant_space_features",
+    Base.metadata,
+    Column("restaurant_id", BigInteger, ForeignKey("restaurants.id", ondelete="CASCADE"), primary_key=True),
+    Column("feature_id", BigInteger, ForeignKey("space_features.id"), primary_key=True),
+)
+
+
+class CuisineType(Base):
+    __tablename__ = "cuisine_types"
+
+    id = Column(BigInteger, primary_key=True)
+    slug = Column(String(60), unique=True, nullable=False)  # ex: "pizza"
+    name = Column(String(80), nullable=False)               # ex: "Pizzas"
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    restaurants = relationship(
+        "Restaurant",
+        secondary=restaurant_cuisine_types,
+        back_populates="cuisine_types",
+    )
+
+
+class CuisineFeature(Base):
+    __tablename__ = "cuisine_features"
+
+    id = Column(BigInteger, primary_key=True)
+    slug = Column(String(60), unique=True, nullable=False)   # ex: "vegan_options"
+    name = Column(String(120), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    restaurants = relationship(
+        "Restaurant",
+        secondary=restaurant_cuisine_features,
+        back_populates="cuisine_features",
+    )
+
+
+class SpaceFeature(Base):
+    __tablename__ = "space_features"
+
+    id = Column(BigInteger, primary_key=True)
+    slug = Column(String(60), unique=True, nullable=False)   # ex: "free_wifi"
+    name = Column(String(120), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    restaurants = relationship(
+        "Restaurant",
+        secondary=restaurant_space_features,
+        back_populates="space_features",
+    )
 
 
 # =========================
 # CLIENTS (Antigo Users)
 # =========================
 class Client(Base):
-    __tablename__ = "clients"  # <--- MUDOU DE users PARA clients
+    __tablename__ = "clients"
 
     id = Column(BigInteger, primary_key=True)
     phone_e164 = Column(String, unique=True, nullable=False)
@@ -49,33 +127,29 @@ class Client(Base):
 
     level = Column(Integer, nullable=False, default=1)
     reputation = Column(Integer, nullable=False, default=100)
-    
+
     # Push Notification Token
-    fcm_token = Column(String, nullable=True) 
+    fcm_token = Column(String, nullable=True)
 
     # Geo
-    # last_loc_at e loc_accuracy_m são suficientes como metadados por enquanto.
     last_loc_at = Column(DateTime(timezone=True), nullable=True)
     loc_accuracy_m = Column(Integer, nullable=True, default=0)
 
-    # Geo: Ponto geográfico (Latitude/Longitude)
-    # srid=4326 é o padrão GPS (WGS 84)
-    geog = Column(Geography(geometry_type='POINT', srid=4326), nullable=True)
+    geog = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
 
     cooldown_until = Column(DateTime(timezone=True), nullable=True)
     is_blocked = Column(Boolean, nullable=False, default=False)
 
-    # Relacionamentos atualizados
     stats = relationship("ClientStats", back_populates="client", uselist=False)
     claims = relationship("OfferClaim", back_populates="client")
 
 
 class ClientStats(Base):
-    __tablename__ = "client_stats"  # <--- MUDOU DE user_stats PARA client_stats
+    __tablename__ = "client_stats"
 
-    client_id = Column( # <--- MUDOU DE user_id PARA client_id
+    client_id = Column(
         BigInteger,
-        ForeignKey("clients.id", ondelete="CASCADE"), # <--- FK aponta para clients
+        ForeignKey("clients.id", ondelete="CASCADE"),
         primary_key=True,
     )
 
@@ -95,7 +169,7 @@ class Restaurant(Base):
 
     id = Column(BigInteger, primary_key=True)
     name = Column(String, nullable=False)
-    
+
     # Campos de Endereço e Perfil
     cnpj = Column(String, nullable=True)
     city = Column(String, nullable=True)
@@ -107,24 +181,43 @@ class Restaurant(Base):
     address_state = Column(String, nullable=True)
     address_zip = Column(String, nullable=True)
     address_country = Column(String, default="BR")
-    
+
     logo_url = Column(String, nullable=True)
     cover_image_url = Column(String, nullable=True)
     logo_updated_at = Column(DateTime(timezone=True), nullable=True)
     phone = Column(String, nullable=True)
-    
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     is_active = Column(Boolean, nullable=False, default=True)
 
     offers = relationship("Offer", back_populates="restaurant")
     staff = relationship("RestaurantStaff", back_populates="restaurant")
 
-    # Geo: Ponto geográfico (Latitude/Longitude)
-    # srid=4326 é o padrão GPS (WGS 84)
-    geog = Column(Geography(geometry_type='POINT', srid=4326), nullable=True)
+    geog = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
 
     # Saldo em conta de KM
     balance_km = Column(Integer, default=0, nullable=False)
+
+    # NEW relationships (taxonomy)
+    cuisine_types = relationship(
+        "CuisineType",
+        secondary=restaurant_cuisine_types,
+        back_populates="restaurants",
+        lazy="selectin",
+    )
+    cuisine_features = relationship(
+        "CuisineFeature",
+        secondary=restaurant_cuisine_features,
+        back_populates="restaurants",
+        lazy="selectin",
+    )
+    space_features = relationship(
+        "SpaceFeature",
+        secondary=restaurant_space_features,
+        back_populates="restaurants",
+        lazy="selectin",
+    )
+
 
 class RestaurantStaff(Base):
     __tablename__ = "restaurant_staff"
@@ -141,7 +234,7 @@ class RestaurantStaff(Base):
     password_hash = Column(String, nullable=True)
     role = Column(String, nullable=False)  # INTERNAL_ADMIN, REST_ADMIN, REST_STAFF
     is_active = Column(Boolean, nullable=False, default=True)
-    
+
     # Ativação
     activation_token = Column(String, nullable=True)
     activation_expires_at = Column(DateTime(timezone=True), nullable=True)
@@ -177,11 +270,11 @@ class Offer(Base):
     title = Column(String, nullable=False)
     message = Column(String, nullable=True)
     description = Column(Text, nullable=True)
-    
+
     # Pricing
     price_cents = Column(Integer, nullable=False, default=0)
     original_price_cents = Column(Integer, nullable=True)
-    
+
     # Targeting
     placement = Column(String, nullable=False, default="NORMAL")
     radius_km = Column(Integer, nullable=True)
@@ -190,11 +283,7 @@ class Offer(Base):
     end_at = Column(DateTime(timezone=True), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    status = Column(
-        String,
-        nullable=False,
-        default="CREATED",
-    )
+    status = Column(String, nullable=False, default="CREATED")
     status_reason = Column(String, nullable=True)
     status_changed_by_staff_id = Column(BigInteger, nullable=True)
     closed_at = Column(DateTime(timezone=True), nullable=True)
@@ -218,11 +307,11 @@ class Offer(Base):
     audience_estimate = Column(Integer, nullable=True)
 
     offer_type = Column(String, nullable=False, default="DISCOUNT_OVER_BILL")
-    payment_method = Column(String, default="CREDITS") # "CREDITS" ou "PAY_AS_YOU_GO"
-    
-    # Quanto custou essa oferta (se foi em dinheiro)
+    payment_method = Column(String, default="CREDITS")  # "CREDITS" ou "PAY_AS_YOU_GO"
+
     cost_amount = Column(Numeric(10, 2), default=0.00)
-    
+
+
 class OfferTarget(Base):
     __tablename__ = "offer_targets"
 
@@ -231,9 +320,9 @@ class OfferTarget(Base):
         ForeignKey("offers.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    client_id = Column( # <--- MUDOU DE user_id PARA client_id
+    client_id = Column(
         BigInteger,
-        ForeignKey("clients.id", ondelete="CASCADE"), # <--- FK aponta para clients
+        ForeignKey("clients.id", ondelete="CASCADE"),
         primary_key=True,
     )
 
@@ -257,9 +346,9 @@ class OfferClaim(Base):
         ForeignKey("offers.id", ondelete="CASCADE"),
         nullable=False,
     )
-    client_id = Column( # <--- MUDOU DE user_id PARA client_id
+    client_id = Column(
         BigInteger,
-        ForeignKey("clients.id", ondelete="CASCADE"), # <--- FK aponta para clients
+        ForeignKey("clients.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -276,10 +365,10 @@ class OfferClaim(Base):
     penalty_applied_at = Column(DateTime(timezone=True), nullable=True)
 
     offer = relationship("Offer", back_populates="claims")
-    client = relationship("Client", back_populates="claims") # <--- Renomeada a prop
+    client = relationship("Client", back_populates="claims")
 
     __table_args__ = (
-        UniqueConstraint("offer_id", "client_id", name="uq_offer_client"), # <--- Constraint atualizada
+        UniqueConstraint("offer_id", "client_id", name="uq_offer_client"),
         CheckConstraint(
             "status IN ('ACCEPTED','REDEEMED','CANCELLED','NO_SHOW')",
             name="ck_offer_claim_status",
