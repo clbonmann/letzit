@@ -47,7 +47,7 @@ async def list_staff_offers(
             o.placement, 
             o.radius_km, 
             o.price_cents,
-            o.origin_price_cents, 
+            o.original_price_cents, 
             o.status, 
             o.accept_limit, 
             o.accepted_count, 
