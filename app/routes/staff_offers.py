@@ -24,12 +24,12 @@ from app.schemas.staff import (
 
 router = APIRouter(prefix="/staff/offers", tags=["staff-offers"])
 
-# --- FUNÇÕES AUXILIARES (MANTIDAS) ---
+# --- FUNÇÕES AUXILIARES ---
 def _staff_id(staff: dict) -> int: return int(staff.get("id") or staff.get("id"))
 def _normalize_city(s: str) -> str: return s.strip().lower().replace(" ", "_").replace("-", "_")
 def _utc_day_window(now: datetime) -> tuple: return datetime(now.year, now.month, now.day, tzinfo=timezone.utc), datetime(now.year, now.month, now.day, tzinfo=timezone.utc) + timedelta(days=1)
 
-# --- ENDPOINT 1: LISTAR (AQUI ESTÁ A CORREÇÃO CRÍTICA) ---
+# --- ENDPOINT 1: LISTAR (CORRIGIDO) ---
 @router.get("", summary="List Offers")
 async def list_staff_offers(
     status: str | None = Query(None), 
@@ -40,8 +40,8 @@ async def list_staff_offers(
     ):
     """
     Lista as ofertas.
-    ALTERAÇÃO: Adicionados campos 'offer_type', 'city' e 'audience_estimate' no SQL
-    para permitir que o botão 'Repetir Oferta' no frontend funcione sem dar 404/Network Error.
+    CORREÇÃO: Removido 'o.city' que não existe no banco.
+    Mantido 'offer_type' e 'audience_estimate'.
     """
     sql = """
         SELECT 
@@ -56,9 +56,8 @@ async def list_staff_offers(
             o.accepted_count, 
             o.created_at, 
             o.end_at,
-            o.offer_type,        -- ADICIONADO
-            o.city,              -- ADICIONADO
-            o.audience_estimate, -- ADICIONADO
+            o.offer_type,        -- Necessário para o frontend
+            o.audience_estimate, -- Necessário para o frontend
             COUNT(c.id) FILTER (WHERE c.status='REDEEMED')::int AS redeemed_count, 
             COUNT(c.id) FILTER (WHERE c.status='NO_SHOW')::int AS no_show_count 
         FROM offers o 
@@ -108,16 +107,13 @@ async def quote_offer(
         stmt_aud = select(func.count(Client.id)).where(
             ST_DWithin(Client.geog, rest.geog, radius_meters)
         )
-        
         aud_result = await db.execute(stmt_aud)
         audience = aud_result.scalar() or 0
 
-        # Calcular Preço
+        # Calcular Preço (Saldo KM)
         price_cents = 0
         quote_msg = ""
-
         if rest.balance_km >= radius_km:
-            price_cents = 0
             quote_msg = f"Coberto pelo seu pacote (Saldo atual: {rest.balance_km}km)"
         else:
             price_amount = radius_km * PRICE_PER_KM_ADHOC
@@ -198,7 +194,7 @@ async def create_offer(
     # 3. CRIAR OBJETO
     initial_status = "CREATED" if start_time <= now else "SCHEDULED"
     
-    # Tratamento para Enum vs String
+    # Tratamento Enum
     offer_type_val = payload.offer_type.value if hasattr(payload.offer_type, 'value') else payload.offer_type
 
     new_offer = Offer(
