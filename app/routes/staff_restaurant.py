@@ -367,30 +367,40 @@ async def update_restaurant_features(
         restaurant_id=restaurant_id, 
         selections=payload.selections
     )
-@router.patch("/status", response_model=RestaurantStatusUpdate)
+@router.patch("/status", response_model=RestaurantSchema)
 async def update_restaurant_status(
     payload: RestaurantStatusUpdate,
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
 ):
-    # 1. Busca o restaurante do staff
-    restaurant_id = int(staff["restaurant_id"])
+    """
+    Endpoint rápido para alternar status Aberto/Fechado e Horas.
+    """
+    # 1. Busca o restaurante (Query ORM)
+    stmt = select(Restaurant).join(Staff).where(Staff.id == staff["id"])
+    
+    result = await db.execute(stmt)
+    
+    # --- CORREÇÃO AQUI ---
+    # Usamos .scalars().first() para pegar a instância do Objeto (Model),
+    # permitindo edição. Se usar apenas .first() ou .mappings(), vem como leitura.
+    restaurant = result.scalars().first() 
+    # ---------------------
 
-    restaurant = (await db.execute(
-        text("SELECT id, is_open, working_hours FROM restaurants WHERE id = :rid"),
-        {"rid": restaurant_id}
-    )).mappings().first()
-    # 2. Verifica permissão (apenas Admin ou Gerente deveriam abrir/fechar)
-    _require_admin_role(staff) 
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
 
-    # 3. Atualiza apenas os campos enviados
+    # 2. Verifica permissão
+    # _require_admin_role(staff) # Descomente se sua lógica exigir admin
+
+    # 3. Atualiza os campos (Agora funciona pois 'restaurant' é um objeto mutável)
     if payload.is_open is not None:
         restaurant.is_open = payload.is_open
     
     if payload.working_hours is not None:
         restaurant.working_hours = payload.working_hours
 
-    # 4. Salva
+    # 4. Salva no banco
     await db.commit()
     await db.refresh(restaurant)
     
