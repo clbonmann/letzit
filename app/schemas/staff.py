@@ -78,7 +78,11 @@ class RestaurantRead(BaseModel):
     logo_url: Optional[str] = None
     lat: Optional[float] = None
     long: Optional[float] = None
-    
+    phone: Optional[str] = None
+    description: Optional[str] = None
+    is_open: Optional[bool] = None
+    working_hours: Optional[float] = None
+
     class Config:
         from_attributes = True
 
