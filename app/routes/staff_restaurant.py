@@ -60,7 +60,7 @@ async def list_my_restaurants(
         SELECT id, name, cnpj, logo_url,
                NULLIF(COALESCE(city, ''), '') AS city,
                address_street, address_number, address_district,
-               address_city, address_state, address_zip, address_country,
+               address_city, address_state, address_zip, address_country, description, phone, is_open, working_hours,
                ST_Y(geog::geometry) as lat,
                ST_X(geog::geometry) as long
         FROM restaurants
@@ -124,12 +124,14 @@ async def update_restaurant_details(
                   address_country = COALESCE(:address_country, address_country),
                   phone = COALESCE(:phone, phone),
                   logo_url = COALESCE(:logo_url, logo_url),
+                 is_open = COALESCE(:is_open, is_open),
+                 working_hours = COALESCE(:working_hours, working_hours),
                   logo_updated_at = CASE WHEN :logo_url IS NOT NULL THEN :now ELSE logo_updated_at END
                 WHERE id = :rid
                 RETURNING id, name, description, cnpj, logo_url,
                           NULLIF(COALESCE(city, ''), '') AS city,
                           address_street, address_number, address_district,
-                          address_city, address_state, address_zip, address_country, phone,
+                          address_city, address_state, address_zip, address_country, phone,is_open, working_hours,
                           ST_Y(geog::geometry) as lat,
                           ST_X(geog::geometry) as long
             """),
@@ -373,7 +375,7 @@ async def update_restaurant_status(
 ):
     # 1. Busca o restaurante do staff
     restaurant_id = int(staff["restaurant_id"])
-    
+
     restaurant = (await db.execute(
         text("SELECT id, is_open, working_hours FROM restaurants WHERE id = :rid"),
         {"rid": restaurant_id}
