@@ -251,26 +251,25 @@ class TaxItem(BaseModel):
     slug: str
     name: str
 
+# Payload flexível: aceita qualquer string como chave (código do grupo)
+class RestaurantFeaturesUpdateRequest(BaseModel):
+    # Ex: {"CUISINE_TYPE": [1, 2], "NEW_GROUP": [10]}
+    selections: Dict[str, List[int]] 
+
+class RestaurantFeaturesResponse(BaseModel):
+    restaurant_id: int
+    # Retorna o que o restaurante tem salvo, agrupado por código
+    selections: Dict[str, List[int]]
+
+# Add this near TaxItem in app/schemas/staff.py
 class TaxGroup(BaseModel):
     id: int
     code: str
     name: str
-    max_select: int | None = None
-    items: list[TaxItem]
-
-class TaxonomyResponse(BaseModel):
-    groups: list[TaxGroup]
-
-class RestaurantFeaturesResponse(BaseModel):
-    restaurant_id: int
-    selections: dict[str, list[int]]  # code -> feature_id list
-
-class RestaurantFeaturesUpdateRequest(BaseModel):
-    # Exemplo:
-    # { "selections": { "CUISINE_TYPE": [1,2], "SPACE_FEATURE":[9] } }
-    selections: dict[str, list[int]] = Field(default_factory=dict)
+    max_select: Optional[int] = None
+    items: List[TaxItem]
 
 class RestaurantFeaturesUpdateResponse(BaseModel):
     status: str
     restaurant_id: int
-    selections: dict[str, list[int]]
+    selections: Dict[str, List[int]]

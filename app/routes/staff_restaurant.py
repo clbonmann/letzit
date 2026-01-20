@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import List,Literal
+from typing import List, Literal, Dict, Optional, Set
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy import text
@@ -10,20 +10,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
-# Certifique-se que estes utilitários existem no seu projeto:
 from app.utils.cnpj import normalize_cnpj 
 from app.services.storage import upload_image 
-# IMPORTANDO SCHEMAS 
-from app.schemas.staff import RestaurantRead, RestaurantUpdate, RestaurantFeaturesResponse, RestaurantFeaturesUpdateRequest, RestaurantFeaturesUpdateResponse, TaxGroup,TaxItem
+from app.schemas.staff import (
+    RestaurantRead, 
+    RestaurantUpdate, 
+    RestaurantFeaturesResponse, 
+    RestaurantFeaturesUpdateRequest, 
+    RestaurantFeaturesUpdateResponse, 
+    TaxGroup,
+    TaxItem
+)
 
 router = APIRouter(prefix="/staff/restaurant", tags=["staff-restaurant"])
 
-GroupCode = Literal["CUISINE_TYPE", "CUISINE_FEATURE", "SPACE_FEATURE"]
+# --- Helper Functions ---
 
 def _is_internal_admin(staff: dict) -> bool:
-    # ajuste se necessário
     return staff.get("role") == "INTERNAL_ADMIN" or int(staff.get("restaurant_id", 0)) == 1
-
 
 def _require_can_manage_restaurant(staff: dict, restaurant_id: int) -> None:
     if _is_internal_admin(staff):
@@ -32,11 +36,12 @@ def _require_can_manage_restaurant(staff: dict, restaurant_id: int) -> None:
         raise HTTPException(status_code=403, detail="Not allowed for this restaurant")
 
 def _require_admin_role(staff: dict) -> None:
-    # Se você tiver require_admin(staff), pode usar ele.
     role = staff.get("role")
-    if role not in ("INTERNAL_ADMIN", "CLIENT_ADMIN"):
+    if role not in ("INTERNAL_ADMIN", "REST_ADMIN"):
         raise HTTPException(status_code=403, detail="Admin role required")
-    
+
+# --- Standard Restaurant Endpoints (List, Update, Upload) ---
+# These remain largely the same but are included for completeness of the file
 
 @router.get("", response_model=List[RestaurantRead])
 async def list_my_restaurants(
@@ -44,9 +49,9 @@ async def list_my_restaurants(
     staff: dict = Depends(get_current_staff),
 ):
     """
-    Lista dados do restaurante.
-    - INTERNAL_ADMIN: Vê todos.
-    - Staff Normal: Vê apenas o seu.
+    List restaurants.
+    - INTERNAL_ADMIN: Sees all.
+    - Normal Staff: Sees only their own.
     """
     role = str(staff.get("role") or "")
     rid = int(staff.get("restaurant_id") or 0)
@@ -83,11 +88,10 @@ async def update_restaurant_details(
     staff: dict = Depends(get_current_staff),
 ):
     """
-    Atualiza dados textuais (Nome, Endereço, CNPJ).
+    Updates textual data (Name, Address, CNPJ).
     """
     role = str(staff.get("role") or "")
     
-    # Define ID alvo
     if role == "INTERNAL_ADMIN":
         if not payload.id:
             raise HTTPException(400, "Admin deve informar o 'id' do restaurante.")
@@ -95,17 +99,14 @@ async def update_restaurant_details(
     else:
         rid = int(staff["restaurant_id"])
 
-    # Carrega dados atuais
     cur = (await db.execute(text("SELECT id, cnpj FROM restaurants WHERE id = :rid"), {"rid": rid})).mappings().first()
     if not cur:
         raise HTTPException(404, "Restaurante não encontrado.")
 
-    # Valida CNPJ
     new_cnpj = normalize_cnpj(payload.cnpj) if payload.cnpj is not None else cur["cnpj"]
     if new_cnpj and len(new_cnpj) != 14:
         raise HTTPException(400, "CNPJ deve conter 14 dígitos.")
 
-    # Update
     try:
         row = (await db.execute(
             text("""
@@ -160,26 +161,20 @@ async def upload_restaurant_logo(
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff)
 ):
-    """Upload de Logo para Cloudinary + Update no Banco."""
+    """Upload Logo to Cloudinary + DB Update."""
     restaurant_id = int(staff["restaurant_id"])
 
     try:
-        # Definimos a transformação aqui:
-        # width/height 500: Garante boa qualidade (retina) mas leve.Otptei por 150 para as logos.
-        # crop="fill": Corta o excesso para preencher o quadrado (não estica).
-        # gravity="center": Tenta manter o centro da imagem.
         transformations = {
             "width": 150, 
             "height": 150, 
-            "crop": "pad",       # <--- MUDOU DE 'fill' PARA 'pad'
-            "background": "white", # <--- Cor do fundo para preencher o espaço vazio
+            "crop": "pad",
+            "background": "white",
             "gravity": "center",
             "quality": "auto",
             "fetch_format": "auto"
         }
 
-        # ATENÇÃO: Verifique se sua função upload_image aceita **kwargs ou um parametro 'transformation'
-        # Se não aceitar, veja o Passo 1.1 abaixo.
         url = upload_image(
             file, 
             folder=f"restaurants/{restaurant_id}",
@@ -198,54 +193,48 @@ async def upload_restaurant_logo(
 
     return {"status": "success", "logo_url": url}
 
-@router.get("/features/taxonomy", response_model=RestaurantFeaturesResponse)
+
+# ---------------------------
+# REFACTORED FEATURES LOGIC
+# ---------------------------
+
+@router.get("/features/taxonomy")
 async def get_features_taxonomy(
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
-) -> RestaurantFeaturesResponse:
-    # Qualquer staff logado pode ler a taxonomia
-    restaurant_id = int(staff["restaurant_id"])
-    selections: dict[str, list[int]] = {"CUISINE_TYPE": [], "CUISINE_FEATURE": [], "SPACE_FEATURE": []}
+):
+    """
+    Returns available taxonomy (groups and features).
+    This endpoint is agnostic to specific group codes.
+    """
+    # 1. Fetch Groups
+    groups = (await db.execute(text("SELECT id, code, name, max_select FROM feature_groups ORDER BY id"))).mappings().all()
 
-    groups = (await db.execute(text("""
-        SELECT id, code, name, max_select
-        FROM feature_groups
-        ORDER BY id
-    """))).mappings().all()
+    # 2. Fetch Active Features
+    features = (await db.execute(text("SELECT id, group_id, slug, name FROM features WHERE is_active = true ORDER BY group_id, name"))).mappings().all()
 
-    items = (await db.execute(text("""
-        SELECT id, group_id, slug, name
-        FROM features
-        WHERE is_active = true
-        ORDER BY group_id, name
-    """))).mappings().all()
+    # 3. Build Tree in Memory
+    features_by_group = {}
+    for f in features:
+        features_by_group.setdefault(f['group_id'], []).append({
+            "id": f['id'],
+            "slug": f['slug'],
+            "name": f['name']
+        })
 
-    # agrupa
-    by_gid: dict[int, list[TaxItem]] = {}
-    for it in items:
-        by_gid.setdefault(int(it["group_id"]), []).append(
-            TaxItem(id=int(it["id"]), slug=str(it["slug"]), name=str(it["name"]))
-        )
-
-    out_groups: list[TaxGroup] = []
+    # 4. Construct Response
+    response_data = []
     for g in groups:
-        gid = int(g["id"])
-        out_groups.append(
-            TaxGroup(
-                id=gid,
-                code=str(g["code"]),
-                name=str(g["name"]),
-                max_select=(int(g["max_select"]) if g["max_select"] is not None else None),
-                items=by_gid.get(gid, []),
-            )
-        )
+        response_data.append({
+            "id": g['id'],
+            "code": g['code'],
+            "name": g['name'],
+            "max_select": g['max_select'],
+            "items": features_by_group.get(g['id'], [])
+        })
 
-    return RestaurantFeaturesResponse(restaurant_id=restaurant_id, selections=selections)
+    return response_data
 
-
-# ---------------------------
-# GET seleção do restaurante
-# ---------------------------
 
 @router.get("/{restaurant_id}/features", response_model=RestaurantFeaturesResponse)
 async def get_restaurant_features(
@@ -255,6 +244,7 @@ async def get_restaurant_features(
 ) -> RestaurantFeaturesResponse:
     _require_can_manage_restaurant(staff, restaurant_id)
 
+    # Fetch existing selections joined with group codes
     rows = (await db.execute(text("""
         SELECT fg.code, rf.feature_id
         FROM restaurant_features rf
@@ -264,7 +254,8 @@ async def get_restaurant_features(
         ORDER BY fg.code, rf.feature_id
     """), {"rid": restaurant_id})).mappings().all()
 
-    selections: dict[str, list[int]] = {"CUISINE_TYPE": [], "CUISINE_FEATURE": [], "SPACE_FEATURE": []}
+    # Organize by group code dynamically
+    selections: Dict[str, List[int]] = {}
     for r in rows:
         code = str(r["code"])
         fid = int(r["feature_id"])
@@ -273,97 +264,96 @@ async def get_restaurant_features(
     return RestaurantFeaturesResponse(restaurant_id=restaurant_id, selections=selections)
 
 
-# ---------------------------
-# PATCH (replace) seleção
-# ---------------------------
-
-@router.patch("/{restaurant_id}/features", response_model=RestaurantFeaturesUpdateResponse)
+@router.put("/{restaurant_id}/features", response_model=RestaurantFeaturesResponse)
 async def update_restaurant_features(
     restaurant_id: int,
     payload: RestaurantFeaturesUpdateRequest,
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
-) -> RestaurantFeaturesUpdateResponse:
+):
+    """
+    Updates features using a Delta strategy (insert new, remove old).
+    Validates existence, active status, and max_select limits dynamically.
+    """
     _require_admin_role(staff)
     _require_can_manage_restaurant(staff, restaurant_id)
 
-    # Normaliza: garante que existam chaves, remove duplicados
-    selections: dict[str, list[int]] = {}
-    for k, v in (payload.selections or {}).items():
-        if v is None:
-            continue
-        selections[str(k)] = list(dict.fromkeys([int(x) for x in v]))  # unique preservando ordem
+    # 1. Flatten all incoming IDs for batch validation
+    incoming_feature_ids: Set[int] = set()
+    if payload.selections:
+        for ids in payload.selections.values():
+            if ids:
+                incoming_feature_ids.update(ids)
+    
+    # Handle Empty Update (Clear All)
+    if not incoming_feature_ids:
+        await db.execute(text("DELETE FROM restaurant_features WHERE restaurant_id = :rid"), {"rid": restaurant_id})
+        await db.commit()
+        return RestaurantFeaturesResponse(restaurant_id=restaurant_id, selections={})
 
-    cuisine_type_ids = selections.get("CUISINE_TYPE", [])
-    cuisine_feature_ids = selections.get("CUISINE_FEATURE", [])
-    space_feature_ids = selections.get("SPACE_FEATURE", [])
+    # 2. Dynamic Validation: Check existence, active status, and limits in one go
+    validation_query = text("""
+        SELECT f.id as feature_id, fg.code as group_code, fg.max_select
+        FROM features f
+        JOIN feature_groups fg ON f.group_id = fg.id
+        WHERE f.id = ANY(:ids) AND f.is_active = true
+    """)
+    
+    valid_features_rows = (await db.execute(validation_query, {"ids": list(incoming_feature_ids)})).mappings().all()
 
-    # Busca max_select do grupo CUISINE_TYPE (ou usa 5)
-    max_select = (await db.execute(text("""
-        SELECT COALESCE(max_select, 5)::int
-        FROM feature_groups
-        WHERE code = 'CUISINE_TYPE'
-    """))).scalar_one_or_none()
-    max_select = int(max_select or 5)
+    # 2.1 Check for invalid IDs (not found or inactive)
+    found_ids = {row['feature_id'] for row in valid_features_rows}
+    if len(found_ids) != len(incoming_feature_ids):
+        invalid_ids = incoming_feature_ids - found_ids
+        raise HTTPException(status_code=400, detail=f"Invalid or inactive feature IDs: {invalid_ids}")
 
-    if len(cuisine_type_ids) > max_select:
-        raise HTTPException(status_code=400, detail=f"CUISINE_TYPE max_select is {max_select}")
+    # 2.2 Map limits and validate max_select
+    # We construct a map of group limits from the valid features found
+    limits_by_group = {} 
+    for row in valid_features_rows:
+        if row['group_code'] not in limits_by_group:
+            limits_by_group[row['group_code']] = row['max_select']
 
-    # Valida se IDs pertencem ao grupo correto e estão ativos
-    async def _validate_ids(group_code: str, ids: list[int]) -> None:
-        if not ids:
-            return
-        ok = (await db.execute(text("""
-            SELECT COUNT(*)::int
-            FROM features f
-            JOIN feature_groups fg ON fg.id = f.group_id
-            WHERE fg.code = :code
-              AND f.is_active = true
-              AND f.id = ANY(:ids)
-        """), {"code": group_code, "ids": ids})).scalar_one()
-        if int(ok) != len(set(ids)):
-            raise HTTPException(status_code=400, detail=f"Invalid feature ids for {group_code}")
+    # Check payload against limits
+    for group_code, ids_list in payload.selections.items():
+        if not ids_list: continue
+        
+        limit = limits_by_group.get(group_code)
+        if limit is not None and len(ids_list) > limit:
+             raise HTTPException(
+                status_code=400, 
+                detail=f"Too many selections for group '{group_code}'. Max allowed: {limit}"
+            )
 
-    await _validate_ids("CUISINE_TYPE", cuisine_type_ids)
-    await _validate_ids("CUISINE_FEATURE", cuisine_feature_ids)
-    await _validate_ids("SPACE_FEATURE", space_feature_ids)
-
-    # Replace: deleta tudo e reinsere as selections
+    # 3. Delta Update Strategy
     async with db.begin():
-        await db.execute(
-            text("DELETE FROM restaurant_features WHERE restaurant_id = :rid"),
-            {"rid": restaurant_id},
-        )
+        # 3.1 Fetch what currently exists for this restaurant
+        current_rows = (await db.execute(
+            text("SELECT feature_id FROM restaurant_features WHERE restaurant_id = :rid"),
+            {"rid": restaurant_id}
+        )).scalars().all()
+        current_ids = set(current_rows)
 
-        # insere em lote via unnest
-        def _insert_many(ids: list[int]) -> None:
-            # helper só pra organização
-            return None
+        # 3.2 Calculate Delta
+        ids_to_insert = list(incoming_feature_ids - current_ids)
+        ids_to_delete = list(current_ids - incoming_feature_ids)
 
-        all_ids = cuisine_type_ids + cuisine_feature_ids + space_feature_ids
-        if all_ids:
+        # 3.3 Apply Changes
+        if ids_to_delete:
+            await db.execute(
+                text("DELETE FROM restaurant_features WHERE restaurant_id = :rid AND feature_id = ANY(:ids)"),
+                {"rid": restaurant_id, "ids": ids_to_delete}
+            )
+        
+        if ids_to_insert:
+            # Efficient batch insert using unnest
             await db.execute(text("""
                 INSERT INTO restaurant_features (restaurant_id, feature_id)
-                SELECT :rid, x
-                FROM unnest(:ids::bigint[]) AS x
-            """), {"rid": restaurant_id, "ids": all_ids})
+                SELECT :rid, x FROM unnest(:ids::bigint[]) as x
+            """), {"rid": restaurant_id, "ids": ids_to_insert})
 
-    # Retorna seleção persistida (releitura)
-    rows = (await db.execute(text("""
-        SELECT fg.code, rf.feature_id
-        FROM restaurant_features rf
-        JOIN features f ON f.id = rf.feature_id
-        JOIN feature_groups fg ON fg.id = f.group_id
-        WHERE rf.restaurant_id = :rid
-        ORDER BY fg.code, rf.feature_id
-    """), {"rid": restaurant_id})).mappings().all()
-
-    out: dict[str, list[int]] = {"CUISINE_TYPE": [], "CUISINE_FEATURE": [], "SPACE_FEATURE": []}
-    for r in rows:
-        out.setdefault(str(r["code"]), []).append(int(r["feature_id"]))
-
-    return RestaurantFeaturesUpdateResponse(
-        status="OK",
-        restaurant_id=restaurant_id,
-        selections=out,
+    # 4. Return updated state
+    return RestaurantFeaturesResponse(
+        restaurant_id=restaurant_id, 
+        selections=payload.selections
     )
