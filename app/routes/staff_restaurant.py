@@ -367,7 +367,7 @@ async def update_restaurant_features(
         restaurant_id=restaurant_id, 
         selections=payload.selections
     )
-@router.patch("/status", response_model=RestaurantSchema)
+@router.patch("/status", response_model=RestaurantStatusUpdate)
 async def update_restaurant_status(
     payload: RestaurantStatusUpdate,
     db: AsyncSession = Depends(get_db_session),
@@ -377,7 +377,8 @@ async def update_restaurant_status(
     Endpoint rápido para alternar status Aberto/Fechado e Horas.
     """
     # 1. Busca o restaurante (Query ORM)
-    stmt = select(Restaurant).join(Staff).where(Staff.id == staff["id"])
+    rid = int(staff.get("restaurant_id") or 0)
+    stmt = text("SELECT is_open, working_hours FROM restaurants WHERE id = :rid").bindparams(rid=rid)
     
     result = await db.execute(stmt)
     
