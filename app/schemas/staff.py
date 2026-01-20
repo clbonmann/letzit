@@ -96,6 +96,8 @@ class RestaurantUpdate(BaseModel):
     logo_url: Optional[str] = None 
     phone: Optional[str] = None
     description: Optional[str] = None
+    is_open: Optional[bool] = None
+    working_hours: Optional[float] = None
 
 # --- OFFERS ---
 Placement = Literal["NORMAL", "CITY_HOME"]
@@ -275,3 +277,8 @@ class RestaurantFeaturesUpdateResponse(BaseModel):
     status: str
     restaurant_id: int
     selections: Dict[str, List[int]]
+
+ 
+class RestaurantStatusUpdate(BaseModel):
+    is_open: Optional[bool] = None
+    working_hours: Optional[int] = Field(None, ge=1, le=24)

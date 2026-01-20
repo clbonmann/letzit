@@ -19,7 +19,7 @@ from app.schemas.staff import (
     RestaurantFeaturesUpdateRequest, 
     RestaurantFeaturesUpdateResponse, 
     TaxGroup,
-    TaxItem
+    TaxItem, RestaurantStatusUpdate
 )
 
 router = APIRouter(prefix="/staff/restaurant", tags=["staff-restaurant"])
@@ -146,6 +146,8 @@ async def update_restaurant_details(
                 "address_zip": payload.address_zip,
                 "address_country": payload.address_country,
                 "phone": payload.phone,
+                "is_open": payload.is_open,
+                "working_hours": payload.working_hours,
                 "logo_url": payload.logo_url,
                 "now": datetime.now(timezone.utc),
             },
@@ -363,3 +365,31 @@ async def update_restaurant_features(
         restaurant_id=restaurant_id, 
         selections=payload.selections
     )
+@router.patch("/status", response_model=RestaurantStatusUpdate)
+async def update_restaurant_status(
+    payload: RestaurantStatusUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    staff: dict = Depends(get_current_staff),
+):
+    # 1. Busca o restaurante do staff
+    restaurant_id = int(staff["restaurant_id"])
+    
+    restaurant = (await db.execute(
+        text("SELECT id, is_open, working_hours FROM restaurants WHERE id = :rid"),
+        {"rid": restaurant_id}
+    )).mappings().first()
+    # 2. Verifica permissão (apenas Admin ou Gerente deveriam abrir/fechar)
+    _require_admin_role(staff) 
+
+    # 3. Atualiza apenas os campos enviados
+    if payload.is_open is not None:
+        restaurant.is_open = payload.is_open
+    
+    if payload.working_hours is not None:
+        restaurant.working_hours = payload.working_hours
+
+    # 4. Salva
+    await db.commit()
+    await db.refresh(restaurant)
+    
+    return restaurant

@@ -174,7 +174,9 @@ class Restaurant(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     is_active = Column(Boolean, nullable=False, default=True)
-
+    is_open = Column(Boolean, nullable=False, default=True)
+    working_hours = Column(float, nullable=True) # Horas de funcionamento diárias
+    
     offers = relationship("Offer", back_populates="restaurant")
     staff = relationship("RestaurantStaff", back_populates="restaurant")
 
