@@ -272,13 +272,12 @@ async def update_restaurant_features(
     staff: dict = Depends(get_current_staff),
 ):
     """
-    Updates features using a Delta strategy (insert new, remove old).
-    Validates existence, active status, and max_select limits dynamically.
+    Updates features using a Delta strategy.
     """
     _require_admin_role(staff)
     _require_can_manage_restaurant(staff, restaurant_id)
 
-    # 1. Flatten all incoming IDs for batch validation
+    # 1. Flatten IDs (mantido igual)
     incoming_feature_ids: Set[int] = set()
     if payload.selections:
         for ids in payload.selections.values():
@@ -291,7 +290,7 @@ async def update_restaurant_features(
         await db.commit()
         return RestaurantFeaturesResponse(restaurant_id=restaurant_id, selections={})
 
-    # 2. Dynamic Validation: Check existence, active status, and limits in one go
+    # 2. Dynamic Validation (mantido igual - ISSO AQUI ABRE A TRANSAÇÃO IMPLÍCITA)
     validation_query = text("""
         SELECT f.id as feature_id, fg.code as group_code, fg.max_select
         FROM features f
@@ -301,23 +300,19 @@ async def update_restaurant_features(
     
     valid_features_rows = (await db.execute(validation_query, {"ids": list(incoming_feature_ids)})).mappings().all()
 
-    # 2.1 Check for invalid IDs (not found or inactive)
+    # ... (Lógica de validação de IDs e Limites mantida igual) ...
     found_ids = {row['feature_id'] for row in valid_features_rows}
     if len(found_ids) != len(incoming_feature_ids):
         invalid_ids = incoming_feature_ids - found_ids
         raise HTTPException(status_code=400, detail=f"Invalid or inactive feature IDs: {invalid_ids}")
 
-    # 2.2 Map limits and validate max_select
-    # We construct a map of group limits from the valid features found
     limits_by_group = {} 
     for row in valid_features_rows:
         if row['group_code'] not in limits_by_group:
             limits_by_group[row['group_code']] = row['max_select']
 
-    # Check payload against limits
     for group_code, ids_list in payload.selections.items():
         if not ids_list: continue
-        
         limit = limits_by_group.get(group_code)
         if limit is not None and len(ids_list) > limit:
              raise HTTPException(
@@ -326,8 +321,8 @@ async def update_restaurant_features(
             )
 
     # 3. Delta Update Strategy
-    async with db.begin():
-        # 3.1 Fetch what currently exists for this restaurant
+    try:
+        # 3.1 Fetch what currently exists
         current_rows = (await db.execute(
             text("SELECT feature_id FROM restaurant_features WHERE restaurant_id = :rid"),
             {"rid": restaurant_id}
@@ -346,11 +341,18 @@ async def update_restaurant_features(
             )
         
         if ids_to_insert:
-            # Efficient batch insert using unnest
-            await db.execute(text("""
-                INSERT INTO restaurant_features (restaurant_id, feature_id)
-                SELECT :rid, x FROM unnest(:ids::bigint[]) as x
-            """), {"rid": restaurant_id, "ids": ids_to_insert})
+            # INSERT EM LOTE (Fix do erro de sintaxe)
+            await db.execute(
+                text("INSERT INTO restaurant_features (restaurant_id, feature_id) VALUES (:rid, :fid)"),
+                [{"rid": restaurant_id, "fid": fid} for fid in ids_to_insert]
+            )
+
+        # 3.4 COMMIT FINAL
+        await db.commit()
+
+    except Exception as e:
+        await db.rollback()
+        raise e
 
     # 4. Return updated state
     return RestaurantFeaturesResponse(
