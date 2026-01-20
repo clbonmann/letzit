@@ -113,6 +113,7 @@ async def update_restaurant_details(
                 UPDATE restaurants
                 SET
                   name = COALESCE(:name, name),
+                  description = COALESCE(:description, description),
                   cnpj = :cnpj,
                   address_street = COALESCE(:address_street, address_street),
                   address_number = COALESCE(:address_number, address_number),
@@ -121,19 +122,21 @@ async def update_restaurant_details(
                   address_state = COALESCE(:address_state, address_state),
                   address_zip = COALESCE(:address_zip, address_zip),
                   address_country = COALESCE(:address_country, address_country),
+                  phone = COALESCE(:phone, phone),
                   logo_url = COALESCE(:logo_url, logo_url),
                   logo_updated_at = CASE WHEN :logo_url IS NOT NULL THEN :now ELSE logo_updated_at END
                 WHERE id = :rid
-                RETURNING id, name, cnpj, logo_url,
+                RETURNING id, name, description, cnpj, logo_url,
                           NULLIF(COALESCE(city, ''), '') AS city,
                           address_street, address_number, address_district,
-                          address_city, address_state, address_zip, address_country,
+                          address_city, address_state, address_zip, address_country, phone,
                           ST_Y(geog::geometry) as lat,
                           ST_X(geog::geometry) as long
             """),
             {
                 "rid": rid,
                 "name": payload.name,
+                "description": payload.description,
                 "cnpj": new_cnpj,
                 "address_street": payload.address_street,
                 "address_number": payload.address_number,
@@ -142,6 +145,7 @@ async def update_restaurant_details(
                 "address_state": payload.address_state,
                 "address_zip": payload.address_zip,
                 "address_country": payload.address_country,
+                "phone": payload.phone,
                 "logo_url": payload.logo_url,
                 "now": datetime.now(timezone.utc),
             },

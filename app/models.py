@@ -155,10 +155,9 @@ class Restaurant(Base):
 
     id = Column(BigInteger, primary_key=True)
     name = Column(String, nullable=False)
-
+    description = Column(Text, nullable=True)
     # Campos de Endereço e Perfil
     cnpj = Column(String, nullable=True)
-    city = Column(String, nullable=True)
     city_slug = Column(String, nullable=True)
     address_street = Column(String, nullable=True)
     address_number = Column(String, nullable=True)

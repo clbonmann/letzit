@@ -94,6 +94,8 @@ class RestaurantUpdate(BaseModel):
     address_zip: Optional[str] = None
     address_country: Optional[str] = None
     logo_url: Optional[str] = None 
+    phone: Optional[str] = None
+    description: Optional[str] = None
 
 # --- OFFERS ---
 Placement = Literal["NORMAL", "CITY_HOME"]
