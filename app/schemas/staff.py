@@ -246,13 +246,31 @@ class AudienceStatsResponse(BaseModel):
     active_window_minutes: int
     breakdown: List[AudienceBucket]
     computed_at: datetime
-
 class TaxItem(BaseModel):
     id: int
     slug: str
     name: str
 
-class RestaurantTaxonomyResponse(BaseModel):
-    cuisine_types: list[TaxItem]
-    cuisine_features: list[TaxItem]
-    space_features: list[TaxItem]
+class TaxGroup(BaseModel):
+    id: int
+    code: str
+    name: str
+    max_select: int | None = None
+    items: list[TaxItem]
+
+class TaxonomyResponse(BaseModel):
+    groups: list[TaxGroup]
+
+class RestaurantFeaturesResponse(BaseModel):
+    restaurant_id: int
+    selections: dict[str, list[int]]  # code -> feature_id list
+
+class RestaurantFeaturesUpdateRequest(BaseModel):
+    # Exemplo:
+    # { "selections": { "CUISINE_TYPE": [1,2], "SPACE_FEATURE":[9] } }
+    selections: dict[str, list[int]] = Field(default_factory=dict)
+
+class RestaurantFeaturesUpdateResponse(BaseModel):
+    status: str
+    restaurant_id: int
+    selections: dict[str, list[int]]

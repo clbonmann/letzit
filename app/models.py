@@ -4,6 +4,7 @@ from geoalchemy2 import Geography
 
 from sqlalchemy import (
     BigInteger,
+    SmallInteger,
     Boolean,
     CheckConstraint,
     Column,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Table,
+    null,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -44,76 +46,58 @@ class OfferType(str, Enum):
 # RESTAURANT TAXONOMY (NEW): Cuisine Types / Features / Space
 # ==========================================================
 
-# Association tables (many-to-many)
-restaurant_cuisine_types = Table(
-    "restaurant_cuisine_types",
-    Base.metadata,
-    Column("restaurant_id", BigInteger, ForeignKey("restaurants.id", ondelete="CASCADE"), primary_key=True),
-    Column("cuisine_type_id", BigInteger, ForeignKey("cuisine_types.id"), primary_key=True),
-)
+class FeatureGroup(Base):
+    __tablename__ = "feature_groups"
 
-restaurant_cuisine_features = Table(
-    "restaurant_cuisine_features",
-    Base.metadata,
-    Column("restaurant_id", BigInteger, ForeignKey("restaurants.id", ondelete="CASCADE"), primary_key=True),
-    Column("feature_id", BigInteger, ForeignKey("cuisine_features.id"), primary_key=True),
-)
-
-restaurant_space_features = Table(
-    "restaurant_space_features",
-    Base.metadata,
-    Column("restaurant_id", BigInteger, ForeignKey("restaurants.id", ondelete="CASCADE"), primary_key=True),
-    Column("feature_id", BigInteger, ForeignKey("space_features.id"), primary_key=True),
-)
-
-
-class CuisineType(Base):
-    __tablename__ = "cuisine_types"
-
-    id = Column(BigInteger, primary_key=True)
-    slug = Column(String(60), unique=True, nullable=False)  # ex: "pizza"
-    name = Column(String(80), nullable=False)               # ex: "Pizzas"
-    is_active = Column(Boolean, nullable=False, default=True)
+    id = Column(SmallInteger, primary_key=True)  # 1,2,3...
+    code = Column(String(40), nullable=False, unique=True)  
+    name = Column(String(80), nullable=False)
+    max_select = Column(SmallInteger, nullable=True)  # ex: 5 para cuisine_type
+    
+    is_active = Column(Boolean, nullable=False, server_default="true")
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    restaurants = relationship(
-        "Restaurant",
-        secondary=restaurant_cuisine_types,
-        back_populates="cuisine_types",
-    )
+    features = relationship("Feature", back_populates="group")
 
-
-class CuisineFeature(Base):
-    __tablename__ = "cuisine_features"
+class Feature(Base):
+    __tablename__ = "features"
 
     id = Column(BigInteger, primary_key=True)
-    slug = Column(String(60), unique=True, nullable=False)   # ex: "vegan_options"
+    group_id = Column(SmallInteger, ForeignKey("feature_groups.id"), nullable=False)
+
+    slug = Column(String(80), nullable=False)
     name = Column(String(120), nullable=False)
-    is_active = Column(Boolean, nullable=False, default=True)
+    is_active = Column(Boolean, nullable=False, server_default="true")
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    restaurants = relationship(
-        "Restaurant",
-        secondary=restaurant_cuisine_features,
-        back_populates="cuisine_features",
+    __table_args__ = (
+        UniqueConstraint("group_id", "slug", name="uq_feature_group_slug"),
     )
 
+    group = relationship("FeatureGroup", back_populates="features")
+    restaurants = relationship("RestaurantFeature", back_populates="feature")
 
-class SpaceFeature(Base):
-    __tablename__ = "space_features"
+class RestaurantFeature(Base):
+    __tablename__ = "restaurant_features"
 
-    id = Column(BigInteger, primary_key=True)
-    slug = Column(String(60), unique=True, nullable=False)   # ex: "free_wifi"
-    name = Column(String(120), nullable=False)
-    is_active = Column(Boolean, nullable=False, default=True)
+    restaurant_id = Column(
+        BigInteger,
+        ForeignKey("restaurants.id", ondelete="CASCADE"),
+        primary_key=True
+    )
+
+    feature_id = Column(
+        BigInteger,
+        ForeignKey("features.id"),
+        primary_key=True
+    )
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    restaurants = relationship(
-        "Restaurant",
-        secondary=restaurant_space_features,
-        back_populates="space_features",
-    )
-
+    restaurant = relationship("Restaurant", back_populates="features")
+    feature = relationship("Feature", back_populates="restaurants")
 
 # =========================
 # CLIENTS (Antigo Users)
@@ -124,7 +108,8 @@ class Client(Base):
     id = Column(BigInteger, primary_key=True)
     phone_e164 = Column(String, unique=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
     level = Column(Integer, nullable=False, default=1)
     reputation = Column(Integer, nullable=False, default=100)
 
@@ -139,6 +124,7 @@ class Client(Base):
 
     cooldown_until = Column(DateTime(timezone=True), nullable=True)
     is_blocked = Column(Boolean, nullable=False, default=False)
+    is_deleted = Column(Boolean, nullable=False, default=False)
 
     stats = relationship("ClientStats", back_populates="client", uselist=False)
     claims = relationship("OfferClaim", back_populates="client")
@@ -199,24 +185,11 @@ class Restaurant(Base):
     balance_km = Column(Integer, default=0, nullable=False)
 
     # NEW relationships (taxonomy)
-    cuisine_types = relationship(
-        "CuisineType",
-        secondary=restaurant_cuisine_types,
-        back_populates="restaurants",
-        lazy="selectin",
-    )
-    cuisine_features = relationship(
-        "CuisineFeature",
-        secondary=restaurant_cuisine_features,
-        back_populates="restaurants",
-        lazy="selectin",
-    )
-    space_features = relationship(
-        "SpaceFeature",
-        secondary=restaurant_space_features,
-        back_populates="restaurants",
-        lazy="selectin",
-    )
+    features = relationship(
+    "RestaurantFeature",
+    back_populates="restaurant",
+    cascade="all, delete-orphan"
+)
 
 
 class RestaurantStaff(Base):
