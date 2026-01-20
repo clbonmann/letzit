@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import List, Literal, Dict, Optional, Set
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +21,7 @@ from app.schemas.staff import (
     TaxGroup,
     TaxItem, RestaurantStatusUpdate
 )
+from app.models import Restaurant, RestaurantStaff as Staff
 
 router = APIRouter(prefix="/staff/restaurant", tags=["staff-restaurant"])
 
@@ -378,8 +379,7 @@ async def update_restaurant_status(
     """
     # 1. Busca o restaurante (Query ORM)
     rid = int(staff.get("restaurant_id") or 0)
-    stmt = text("SELECT is_open, working_hours FROM restaurants WHERE id = :rid").bindparams(rid=rid)
-    
+    stmt = select(Restaurant).join(Staff).where(Staff.id == staff["id"])
     result = await db.execute(stmt)
     
     # --- CORREÇÃO AQUI ---
