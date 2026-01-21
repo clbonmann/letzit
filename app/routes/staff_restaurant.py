@@ -4,9 +4,10 @@ from datetime import datetime, timezone
 from typing import List, Literal, Dict, Optional, Set
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from geoalchemy2 import WKTElement
 
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
@@ -89,79 +90,83 @@ async def update_restaurant_details(
     staff: dict = Depends(get_current_staff),
 ):
     """
-    Updates textual data (Name, Address, CNPJ).
+    Atualiza dados do restaurante dinamicamente.
     """
     role = str(staff.get("role") or "")
     
+    # 1. Definição do ID
     if role == "INTERNAL_ADMIN":
         if not payload.id:
             raise HTTPException(400, "Admin deve informar o 'id' do restaurante.")
         rid = payload.id
     else:
-        rid = int(staff["restaurant_id"])
+        rid = int(staff.get("restaurant_id") or 0)
 
-    cur = (await db.execute(text("SELECT id, cnpj FROM restaurants WHERE id = :rid"), {"rid": rid})).mappings().first()
-    if not cur:
+    # 2. Busca o restaurante existente (ORM)
+    # Importante para validar existência e comparar CNPJ antigo
+    current_restaurant = (await db.execute(select(Restaurant).where(Restaurant.id == rid))).scalars().first()
+    
+    if not current_restaurant:
         raise HTTPException(404, "Restaurante não encontrado.")
 
-    new_cnpj = normalize_cnpj(payload.cnpj) if payload.cnpj is not None else cur["cnpj"]
-    if new_cnpj and len(new_cnpj) != 14:
-        raise HTTPException(400, "CNPJ deve conter 14 dígitos.")
+    # 3. Prepara os dados dinâmicos
+    # exclude_unset=True pega apenas o que foi enviado no JSON
+    update_data = payload.model_dump(exclude_unset=True)
+
+    # Remove o 'id' do dict de update, pois não devemos alterar a PK
+    update_data.pop("id", None)
+
+    # --- Lógicas Específicas ---
+
+    # A. Tratamento de CNPJ
+    if "cnpj" in update_data :
+        normalized = normalize_cnpj(update_data["cnpj"])
+        if normalized and role == "INTERNAL_ADMIN":
+            if len(normalized) != 14:
+                raise HTTPException(400, "CNPJ deve conter 14 dígitos.")
+            update_data["cnpj"] = normalized
+        else:
+            # Se enviou cnpj null/vazio, mantém o antigo ou trata como quiser
+            # Aqui removo para não alterar se for inválido, ou mantenho lógica antiga
+            update_data.pop("cnpj") 
+
+    # B. Tratamento de Geometria (PostGIS)
+    # Se lat E long foram enviados, atualiza o campo geog
+    if "lat" in update_data and "long" in update_data:
+        lat = update_data.pop("lat", None)   # Pega o valor e REMOVE a chave
+        long = update_data.pop("long", None)
+        if lat is not None and long is not None:
+            # Cria o ponto WKT (Well-Known Text) com SRID 4326
+            update_data["geog"] = WKTElement(f"POINT({long} {lat})", srid=4326)
+    
+    # C. Timestamp da Logo
+    if "logo_url" in update_data and update_data["logo_url"]:
+        update_data["logo_updated_at"] = datetime.now(timezone.utc)
+    
+    update_data["updated_at"] = datetime.now(timezone.utc)
+
+    # Se não sobrou nada para atualizar, retorna o atual
+    if not update_data:
+        return current_restaurant
 
     try:
-        row = (await db.execute(
-            text("""
-                UPDATE restaurants
-                SET
-                  name = COALESCE(:name, name),
-                  description = COALESCE(:description, description),
-                  cnpj = :cnpj,
-                  address_street = COALESCE(:address_street, address_street),
-                  address_number = COALESCE(:address_number, address_number),
-                  address_district = COALESCE(:address_district, address_district),
-                  address_city = COALESCE(:address_city, address_city),
-                  address_state = COALESCE(:address_state, address_state),
-                  address_zip = COALESCE(:address_zip, address_zip),
-                  address_country = COALESCE(:address_country, address_country),
-                  phone = COALESCE(:phone, phone),
-                  logo_url = COALESCE(:logo_url, logo_url),
-                  is_open = COALESCE(:is_open, is_open),
-                  working_hours = COALESCE(:working_hours, working_hours),
-                  geog = CASE WHEN :lat IS NOT NULL AND :long IS NOT NULL THEN ST_SetSRID(ST_MakePoint(:long, :lat), 4326) ELSE geog END,
-                  logo_updated_at = CASE WHEN :logo_url IS NOT NULL THEN :now ELSE logo_updated_at END
-                WHERE id = :rid
-                RETURNING id, name, description, cnpj, logo_url,
-                          NULLIF(COALESCE(city, ''), '') AS city,
-                          address_street, address_number, address_district,
-                          address_city, address_state, address_zip, address_country, phone,is_open, working_hours,
-                          lat, long
-            """),
-            {
-                "rid": rid,
-                "name": payload.name,
-                "description": payload.description,
-                "cnpj": new_cnpj,
-                "address_street": payload.address_street,
-                "address_number": payload.address_number,
-                "address_district": payload.address_district,
-                "address_city": payload.address_city,
-                "address_state": payload.address_state,
-                "address_zip": payload.address_zip,
-                "address_country": payload.address_country,
-                "phone": payload.phone,
-                "is_open": payload.is_open,
-                "working_hours": payload.working_hours,
-                "logo_url": payload.logo_url,
-                "now": datetime.now(timezone.utc),
-            },
-        )).mappings().first()
-
+        # 4. Executa o Update (SQLAlchemy Core/ORM)
+        stmt = (
+             update(Restaurant)
+            .where(Restaurant.id == rid)
+            .values(**update_data)
+            .returning(Restaurant)
+        )
+        
+        result = await db.execute(stmt)
+        updated_restaurant = result.scalars().first()
+        
         await db.commit()
-        return RestaurantRead(**row)
+        return updated_restaurant
 
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(409, "CNPJ já registrado.")
+        raise HTTPException(409, "Dados conflitantes (ex: CNPJ já registrado).")
 
 
 @router.post("/logo")
@@ -379,7 +384,7 @@ async def update_restaurant_status(
     """
     # 1. Busca o restaurante (Query ORM)
     rid = int(staff.get("restaurant_id") or 0)
-    stmt = select(Restaurant).join(Staff).where(Staff.id == staff["id"])
+    stmt = select(Restaurant).where(Restaurant.id == rid)
     result = await db.execute(stmt)
     
     # --- CORREÇÃO AQUI ---

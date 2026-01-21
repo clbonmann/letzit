@@ -173,6 +173,8 @@ class Restaurant(Base):
     phone = Column(String, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+    
     is_active = Column(Boolean, nullable=False, default=True)
     is_open = Column(Boolean, nullable=False, default=True)
     working_hours = Column(BigInteger, nullable=True) # Horas de funcionamento diárias
