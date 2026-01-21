@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List, Literal, Dict, Optional, Set
 
+from geopy.geocoders import Nominatim
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
