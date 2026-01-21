@@ -189,15 +189,13 @@ async def client_login_app(
 
 # 3. ATUALIZAÇÃO DE LOCALIZAÇÃO E TOKEN (O PULO DO GATO 🐱)
     # Atualizamos lat, lon, o token FCM (caso tenha mudado de celular) e a hora do acesso.
-    # OBS: Verifique se sua tabela tem as colunas 'lat', 'lon' e 'last_location_at'.
-    # Se não tiver 'last_location_at', pode remover essa parte da query ou criar a coluna.
     
     update_query = text("""
         UPDATE clients 
         SET 
             geog = ST_SetSRID(ST_MakePoint(:lat, :lon), 4326)::geography,
             fcm_token = :fcm,
-            last_location_at = NOW() 
+            last_loc_at = NOW() 
         WHERE id = :id
     """)
 
