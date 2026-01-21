@@ -374,5 +374,46 @@ async def publish_offer(
         start_at=offer.start_at,
         end_at=offer.end_at
     )
+@router.get("/audience-estimation")
+async def get_audience_estimation(
+    radius_km: float = Query(..., ge=0.1, le=50), # Validação básica (min 100m, max 50km)
+    db: AsyncSession = Depends(get_db_session),
+    staff: dict = Depends(get_current_staff),
+):
+    """
+    Calcula quantos usuários estão dentro do raio especificado a partir do restaurante.
+    """
+    rid = int(staff.get("restaurant_id") or 0)
 
+    # 1. Buscar localização do Restaurante
+    stmt_rest = select(Restaurant.geog).where(Restaurant.id == rid)
+    result_rest = await db.execute(stmt_rest)
+    restaurant_geog = result_rest.scalars().first()
+
+    if not restaurant_geog:
+        # Se o restaurante não tem lat/long configurado, a estimativa é 0
+        return {"estimated_audience": 0, "radius_km": radius_km}
+
+    # 2. Converter Km para Metros (PostGIS usa metros para Geography)
+    radius_meters = radius_km * 1000
+
+    # 3. Contar Usuários na área (Query Espacial)
+    # Assumindo que sua tabela de usuários se chama 'users' e tem coluna 'geog'
+    # Se você não tiver usuários reais com geog no banco de dev, isso retornará 0.
+    stmt_count = select(func.count(Client.id)).where(
+        ST_DWithin(Client.geog, restaurant_geog, radius_meters)
+    )
+    
+    result_count = await db.execute(stmt_count)
+    count = result_count.scalar() or 0
+
+    # DICA PRO: Em ambiente de DEV, se quiser ver números falsos para testar a UI:
+    # import random
+    # if count == 0: count = int(radius_km * 150 * random.uniform(0.8, 1.2))
+
+    return {
+        "estimated_audience": count,
+        "radius_km": radius_km,
+        "center_point": "Restaurante"
+    }
 # A FUNÇÃO 'get_offer_details' FOI REMOVIDA POIS AGORA 'list_staff_offers' COM 'offer_id' FAZ A MESMA FUNÇÃO.
