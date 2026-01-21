@@ -1,7 +1,31 @@
 from typing import Optional
 from datetime import datetime
 from pydantic import BaseModel, EmailStr
+from geopy.geocoders import Nominatim
 
+# Inicializa o geolocator (Defina um user_agent único para seu app)
+geolocator = Nominatim(user_agent="letzit_delivery_app_v1")
+
+def get_address_from_coords(lat, lon):
+    try:
+        # Pede ao OpenStreetMap o endereço
+        location = geolocator.reverse(f"{lat}, {lon}", language='pt')
+        address = location.raw.get('address', {})
+        
+        # O OpenStreetMap varia os nomes (city, town, village), então tentamos todos
+        city = address.get('city') or address.get('town') or address.get('village') or address.get('municipality')
+        state = address.get('state')
+        state_code = address.get('ISO3166-2-lvl4') # Ex: BR-SC
+        
+        return {
+            "city": city,
+            "state": state,
+            "full_address": location.address
+        }
+    except Exception as e:
+        print(f"Erro ao geocodificar: {e}")
+        return None
+    
 # --- AUTH ---
 class RequestCodeRequest(BaseModel):
     phone_e164: str

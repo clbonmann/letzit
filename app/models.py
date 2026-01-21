@@ -115,11 +115,13 @@ class Client(Base):
     password_hash = Column(String, nullable=True)
     # Push Notification Token
     fcm_token = Column(String, nullable=True)
-
+    email = Column(String, nullable=True)
+    name = Column(String, nullable=True)
     # Geo
     last_loc_at = Column(DateTime(timezone=True), nullable=True)
     loc_accuracy_m = Column(Integer, nullable=True, default=0)
-
+    actual_city = Column(String, nullable=True)
+    actual_state = Column(String, nullable=True)
     geog = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
 
     cooldown_until = Column(DateTime(timezone=True), nullable=True)
@@ -128,6 +130,7 @@ class Client(Base):
 
     stats = relationship("ClientStats", back_populates="client", uselist=False)
     claims = relationship("OfferClaim", back_populates="client")
+# =========================
 
 
 class ClientStats(Base):

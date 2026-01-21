@@ -11,6 +11,7 @@ from geoalchemy2 import WKTElement
 
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
+from app.schemas.client import get_address_from_coords
 from app.utils.cnpj import normalize_cnpj 
 from app.services.storage import upload_image 
 from app.schemas.staff import (
@@ -138,7 +139,10 @@ async def update_restaurant_details(
         if lat is not None and long is not None:
             # Cria o ponto WKT (Well-Known Text) com SRID 4326
             update_data["geog"] = WKTElement(f"POINT({long} {lat})", srid=4326)
-    
+            address_info = get_address_from_coords(lat, long)
+            if address_info:
+                update_data["address_city"] = address_info['city']
+                update_data["address_state"] = address_info['state'] 
     # C. Timestamp da Logo
     if "logo_url" in update_data and update_data["logo_url"]:
         update_data["logo_updated_at"] = datetime.now(timezone.utc)

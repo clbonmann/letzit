@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import random
 from typing import Optional
+from geopy.geocoders import Nominatim
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -11,7 +12,7 @@ from passlib.context import CryptContext
 from app.db import get_db_session
 from app.security import create_access_token
 # IMPORTANDO O SCHEMA
-from app.schemas.client import RequestCodeRequest, ClientLoginRequest, ValidateCodeRequest
+from app.schemas.client import RequestCodeRequest, ClientLoginRequest, ValidateCodeRequest, get_address_from_coords
 
 router = APIRouter(prefix="/client/auth", tags=["client-auth"])
 
@@ -195,29 +196,46 @@ async def client_login_app(
         SET 
             geog = ST_SetSRID(ST_MakePoint(:lat, :lon), 4326)::geography,
             fcm_token = :fcm,
-            last_loc_at = NOW() 
+            last_loc_at = NOW() ,
+            actual_city = :city,
+            actual_state = :state
         WHERE id = :id
     """)
+    
+    city_name = None
+    state_name = None
 
+    # Só busca se a lat/lon forem válidas
+    if payload.lat != 0 and payload.lon != 0:
+        address_info = get_address_from_coords(payload.lat, payload.lon)
+        if address_info:
+            city_name = address_info['city']
+            state_name = address_info['state'] 
     # Só atualizamos se vieram coordenadas válidas (diferentes de 0)
     # Mas o fcm_token sempre atualizamos para garantir notificações
     try:
         if payload.lat != 0 or payload.lon != 0:
-            await db.execute(update_query, {
-                "lat": payload.lat, 
-                "lon": payload.lon, 
+            address_info = get_address_from_coords(payload.lat, payload.lon)
+            if address_info:
+                city_name = address_info['city']
+                state_name = address_info['state'] 
+                await db.execute(update_query, {
+                    "lat": payload.lat, 
+                    "lon": payload.lon, 
+                    "fcm": payload.fcm_token,
+                    "id": client['id'],
+                    "city": city_name,
+                    "state": state_name
+                })
+                await db.commit()
+                print(f"Localização do cliente {client['id']} atualizada: {payload.lat}, {payload.lon}")
+            else:
+                # Se a localização veio 0.0 (permissão negada), atualizamos pelo menos o token e o horário
+                await db.execute(text("UPDATE clients SET fcm_token = :fcm, last_location_at = NOW() WHERE id = :id"), {
                 "fcm": payload.fcm_token,
                 "id": client['id']
-            })
-            await db.commit()
-            print(f"Localização do cliente {client['id']} atualizada: {payload.lat}, {payload.lon}")
-        else:
-            # Se a localização veio 0.0 (permissão negada), atualizamos pelo menos o token e o horário
-            await db.execute(text("UPDATE clients SET fcm_token = :fcm, last_location_at = NOW() WHERE id = :id"), {
-                "fcm": payload.fcm_token,
-                "id": client['id']
-            })
-            await db.commit()
+                })
+                await db.commit()
 
     except Exception as e:
         print(f"Erro ao atualizar localização no login: {e}")
