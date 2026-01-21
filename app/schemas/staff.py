@@ -102,7 +102,10 @@ class RestaurantUpdate(BaseModel):
     description: Optional[str] = None
     is_open: Optional[bool] = None
     working_hours: Optional[float] = None
+    lat: Optional[float] = None
+    long: Optional[float] = None
 
+    
 # --- OFFERS ---
 Placement = Literal["NORMAL", "CITY_HOME"]
 
