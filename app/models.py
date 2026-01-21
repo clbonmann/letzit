@@ -356,7 +356,7 @@ class ClientFirstAccess(Base):
 
     id = Column(BigInteger, primary_key=True)
     status = Column(String, nullable=False, server_default="'PENDING'")
-    code = Column(BigInteger, nullable=False, server_default="0")
+    code = Column(String, nullable=False)
     phone_e164 = Column(String, nullable=False)
     accepted_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=False)   
