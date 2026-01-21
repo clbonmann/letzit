@@ -125,8 +125,9 @@ async def update_restaurant_details(
                   address_country = COALESCE(:address_country, address_country),
                   phone = COALESCE(:phone, phone),
                   logo_url = COALESCE(:logo_url, logo_url),
-                 is_open = COALESCE(:is_open, is_open),
-                 working_hours = COALESCE(:working_hours, working_hours),
+                  is_open = COALESCE(:is_open, is_open),
+                  working_hours = COALESCE(:working_hours, working_hours),
+                  geog = CASE WHEN :lat IS NOT NULL AND :long IS NOT NULL THEN ST_SetSRID(ST_MakePoint(:long, :lat), 4326) ELSE geog END,
                   logo_updated_at = CASE WHEN :logo_url IS NOT NULL THEN :now ELSE logo_updated_at END
                 WHERE id = :rid
                 RETURNING id, name, description, cnpj, logo_url,
