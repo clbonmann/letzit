@@ -20,7 +20,7 @@ async def request_verification_code(
 ):
     """[BACKUP/TESTE] Gera código SMS simulado."""
     phone = payload.phone_e164.strip()
-    code = "111111" 
+    code = 111111
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
 
     await db.execute(
