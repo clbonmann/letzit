@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db_session
 from app.security import create_access_token
 # IMPORTANDO O SCHEMA
-from app.schemas.client import RequestCodeRequest, ClientLoginRequest
+from app.schemas.client import RequestCodeRequest, ClientLoginRequest, ValidateCodeRequest
 
 router = APIRouter(prefix="/client/auth", tags=["client-auth"])
 
@@ -51,7 +51,7 @@ async def request_verification_code(
     await db.commit()
     
     print(f"=== SMS SIMULADO PARA {phone}: CÓDIGO {code} ===")
-    return {"message": "Código enviado (olhe os logs)"}
+    return {"message": "Código enviado"}
 
 @router.post("/login/manual")
 async def login_manual(
@@ -81,11 +81,89 @@ async def login_manual(
     await db.commit()
 
     if client.is_blocked: raise HTTPException(403, "Conta bloqueada.")
-    await db.execute(text("DELETE FROM verification_codes WHERE phone_e164 = :phone"), {"phone": phone})
+    await db.execute(text("DELETE FROM client_first_access WHERE phone_e164 = :phone"), {"phone": phone})
     await db.commit()
 
     access_token = create_access_token(subject=client.id, extra_claims={"type": "client"})
     return {"access_token": access_token, "token_type": "bearer", "client_id": client.id}
+
+@router.post("/validate-code")
+async def validate_verification_code(
+    payload: ValidateCodeRequest,
+    db: AsyncSession = Depends(get_db_session)
+):
+    phone = payload.phone_e164.strip()
+    
+    # 1. Busca o código na tabela temporária (client_first_access)
+    # Ordenamos pelo 'created_at' descrescente para pegar a tentativa mais recente
+    query = text("""
+        SELECT code, expires_at 
+        FROM client_first_access 
+        WHERE phone_e164 = :phone 
+        ORDER BY created_at DESC 
+        LIMIT 1
+    """)
+    result = await db.execute(query, {"phone": phone})
+    record = result.mappings().one_or_none()
+
+    # 2. Validações
+    if not record:
+        raise HTTPException(status_code=400, detail="Nenhuma solicitação de código encontrada.")
+    
+    saved_code = record['code']
+    expires_at = record['expires_at']
+
+    # Converte expires_at para fuso horário correto se necessário, ou garante comparação UTC
+    if datetime.now(timezone.utc) > expires_at:
+         await db.execute(text("UPDATE client_first_access SET status = 'EXPIRED' WHERE phone_e164 = :phone"), {"phone": phone})
+         await db.commit()
+         raise HTTPException(status_code=400, detail="Código expirado. Solicite um novo.")
+  
+
+    if saved_code != payload.code:
+        raise HTTPException(status_code=400, detail="Código incorreto.")
+
+    # 3. SUCESSO! O código está certo. Vamos criar o Cliente Oficial.
+    
+    # Aqui você insere na tabela 'clients'. Ajuste os campos conforme sua tabela real.
+    insert_client = text("""
+        INSERT INTO clients (phone_e164, fcm_token, created_at, geog , last_loc_at)
+        VALUES (:phone, :fcm, NOW(), ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, NOW())
+        RETURNING id
+    """)
+    
+    try:
+        res_insert = await db.execute(insert_client, {
+            "phone": phone,
+            "fcm": payload.fcm_token,
+            "lat": payload.lat,
+            "lon": payload.lon
+        })
+        new_client_id = res_insert.scalar()
+        
+        # 4. Limpeza (Opcional): Apagar o código usado da tabela temporária para não usar de novo
+        await db.execute(text("UPDATE client_first_access SET status = 'FINISHED' WHERE phone_e164 = :phone"), {"phone": phone})
+        
+        await db.commit()
+
+        # 5. Gerar o Token de Acesso (JWT)
+        # Supondo que você tenha uma função create_access_token configurada
+        # access_token = create_access_token(data={"sub": phone, "id": new_client_id})
+        
+        # Por enquanto, retornando um token fake para seu app não quebrar:
+        fake_token = f"jwt_fake_{new_client_id}_{phone}"
+        
+        return {
+            "message": "Cliente cadastrado com sucesso!",
+            "access_token": fake_token,
+            "client_id": new_client_id
+        }
+
+    except Exception as e:
+        await db.rollback()
+        print(f"Erro ao criar cliente: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno ao criar cadastro.")
+
 
 @router.post("/login")
 async def client_login_app(

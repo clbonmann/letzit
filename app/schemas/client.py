@@ -10,8 +10,15 @@ class ClientLoginRequest(BaseModel):
     phone: str
     lat: float
     lon: float
-    accuracy: Optional[float] = 0.0
     fcm_token: Optional[str] = None
+
+class ValidateCodeRequest(BaseModel):
+    phone_e164: str
+    code: str
+    fcm_token: str
+    # Adicione lat/lon aqui se quiser salvar a localização de cadastro do cliente
+    lat: float | None = 0
+    lon: float | None = 0
 
 # --- PROFILE & LOCATION ---
 class ClientProfileResponse(BaseModel):
