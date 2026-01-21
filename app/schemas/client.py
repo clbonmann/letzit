@@ -11,11 +11,17 @@ class ClientLoginRequest(BaseModel):
     lat: float
     lon: float
     fcm_token: Optional[str] = None
+    password: str
+
+class LoginRequest(BaseModel):
+    phone: str
+    password: str
 
 class ValidateCodeRequest(BaseModel):
     phone_e164: str
     code: str
     fcm_token: str
+    password: str
     # Adicione lat/lon aqui se quiser salvar a localização de cadastro do cliente
     lat: float | None = 0
     lon: float | None = 0

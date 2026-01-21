@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from passlib.context import CryptContext
 
 from app.db import get_db_session
 from app.security import create_access_token
@@ -93,7 +94,7 @@ async def validate_verification_code(
     db: AsyncSession = Depends(get_db_session)
 ):
     phone = payload.phone_e164.strip()
-    
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
     # 1. Busca o código na tabela temporária (client_first_access)
     # Ordenamos pelo 'created_at' descrescente para pegar a tentativa mais recente
     query = text("""
@@ -124,11 +125,11 @@ async def validate_verification_code(
         raise HTTPException(status_code=400, detail="Código incorreto.")
 
     # 3. SUCESSO! O código está certo. Vamos criar o Cliente Oficial.
-    
+    hashed_password = pwd_context.hash(payload.password)
     # Aqui você insere na tabela 'clients'. Ajuste os campos conforme sua tabela real.
     insert_client = text("""
-        INSERT INTO clients (phone_e164, fcm_token, created_at, geog , last_loc_at)
-        VALUES (:phone, :fcm, NOW(), ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, NOW())
+        INSERT INTO clients (phone_e164, fcm_token, created_at, geog , last_loc_at, password_hash)
+        VALUES (:phone, :fcm, NOW(), ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, NOW(), :password_hash)
         RETURNING id
     """)
     
@@ -137,7 +138,8 @@ async def validate_verification_code(
             "phone": phone,
             "fcm": payload.fcm_token,
             "lat": payload.lat,
-            "lon": payload.lon
+            "lon": payload.lon,
+            "password_hash": hashed_password
         })
         new_client_id = res_insert.scalar()
         
@@ -170,26 +172,25 @@ async def client_login_app(
     payload: ClientLoginRequest,
     db: AsyncSession = Depends(get_db_session)
 ):
-    """[OFICIAL] Login via App."""
-    query = text("""
-        INSERT INTO public.clients (phone_e164, created_at, "level", reputation, is_blocked, geog, last_loc_at, loc_accuracy_m, fcm_token) 
-        VALUES (:phone, NOW(), 1, 5.0, FALSE, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), NOW(), :acc, :fcm)
-        ON CONFLICT (phone_e164) DO UPDATE SET last_loc_at = NOW(), geog = ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), loc_accuracy_m = :acc, fcm_token = COALESCE(:fcm, clients.fcm_token)
-        RETURNING id, is_blocked, reputation, "level"
-    """)
-    
-    try:
-        client = (await db.execute(query, {
-            "phone": payload.phone, "lat": payload.lat, "lon": payload.lon, "acc": payload.accuracy, "fcm": payload.fcm_token
-        })).mappings().first()
-        await db.commit()
-    except Exception as e:
-        await db.rollback()
-        print(f"Erro login: {e}")
-        raise HTTPException(500, "Erro ao processar login.")
+    query = text("SELECT id, password_hash, fcm_token, is_blocked FROM clients WHERE phone_e164 = :phone")
+    result = await db.execute(query, {"phone": payload.phone})
+    client = result.mappings().one_or_none()
 
+    if not client:
+        raise HTTPException(status_code=400, detail="Usuário não encontrado.")
+    
     if client.is_blocked: raise HTTPException(403, "Conta bloqueada.")
 
-    access_token = create_access_token(subject=client.id, extra_claims={"type": "client", "lvl": client.level})
-    return {"access_token": access_token, "token_type": "bearer", "client_id": client.id, "reputation": client.reputation}
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+    # Verifica a senha (Hash)
+    if not client['password_hash'] or not pwd_context.verify(payload.password, client['password_hash']):
+        raise HTTPException(status_code=400, detail="Senha incorreta.")
+
+    # Sucesso! Retorna o token
+    fake_token = f"jwt_fake_{client['id']}_{payload.phone}"
+    return {"access_token": fake_token, "message": "Login realizado!"}
+
+    #access_token = create_access_token(subject=client.id, extra_claims={"type": "client", "lvl": client.level})
+    #return {"access_token": access_token, "token_type": "bearer", "client_id": client.id, "reputation": client.reputation}
 

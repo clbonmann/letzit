@@ -112,7 +112,7 @@ class Client(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     level = Column(Integer, nullable=False, default=1)
     reputation = Column(Integer, nullable=False, default=100)
-
+    password_hash = Column(String, nullable=True)
     # Push Notification Token
     fcm_token = Column(String, nullable=True)
 
