@@ -350,3 +350,14 @@ class OfferClaim(Base):
             name="ck_offer_claim_status",
         ),
     )
+
+class ClientFirstAccess(Base):
+    __tablename__ = "client_first_access"
+
+    id = Column(BigInteger, primary_key=True)
+    status = Column(String, nullable=False, server_default="'PENDING'")
+    code = Column(BigInteger, nullable=False, server_default="0")
+    phone_e164 = Column(String, nullable=False)
+    accepted_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)   
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

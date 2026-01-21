@@ -137,3 +137,42 @@ async def accept_offer(offer_id: int, bg: BackgroundTasks, db: AsyncSession = De
     bg.add_task(log_analytics_task, offer_id, uid, "CLAIM")
     return AcceptOfferResponse(status="ACCEPTED", offer_id=offer_id, client_id=uid, expires_at=exp, qr_token=qr, accepted_count=o.accepted_count+1, accept_limit=o.accept_limit)
 
+@router.get("/restaurants")
+async def get_restaurants_list(
+    lat: float,
+    lon: float,
+    page: int = 1,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Lists restaurants ordered by distance from the user.
+    """
+    offset = (page - 1) * limit
+    
+    # PostGIS distance calculation
+    # ST_Distance returns meters for geography type
+    query = text("""
+        SELECT 
+            id, 
+            name, 
+            logo_url, 
+            cover_image_url, 
+            city, 
+            ST_Distance(geog, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))::int as distance_m,
+            is_open,
+            reputation
+        FROM restaurants
+        WHERE is_active = TRUE
+        ORDER BY distance_m ASC
+        LIMIT :limit OFFSET :offset
+    """)
+    
+    rows = (await db.execute(query, {
+        "lat": lat, 
+        "lon": lon, 
+        "limit": limit, 
+        "offset": offset
+    })).mappings().all()
+    
+    return rows

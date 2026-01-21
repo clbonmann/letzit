@@ -24,7 +24,7 @@ async def request_verification_code(
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
 
     await db.execute(
-        text("INSERT INTO verification_codes (phone_e164, code, expires_at) VALUES (:phone, :code, :exp)"),
+        text("INSERT INTO client_first_access (phone_e164, code, expires_at, created_at) VALUES (:phone, :code, :exp, NOW())"),
         {"phone": phone, "code": code, "exp": expires_at}
     )
     await db.commit()
