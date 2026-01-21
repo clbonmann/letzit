@@ -195,8 +195,7 @@ async def client_login_app(
     update_query = text("""
         UPDATE clients 
         SET 
-            lat = :lat, 
-            lon = :lon, 
+            geog = ST_SetSRID(ST_MakePoint(:lat, :lon), 4326)::geography,
             fcm_token = :fcm,
             last_location_at = NOW() 
         WHERE id = :id
