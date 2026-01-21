@@ -187,10 +187,48 @@ async def client_login_app(
     if not client['password_hash'] or not pwd_context.verify(payload.password, client['password_hash']):
         raise HTTPException(status_code=400, detail="Senha incorreta.")
 
-    # Sucesso! Retorna o token
-    fake_token = f"jwt_fake_{client['id']}_{payload.phone}"
-    return {"access_token": fake_token, "message": "Login realizado!"}
+# 3. ATUALIZAÇÃO DE LOCALIZAÇÃO E TOKEN (O PULO DO GATO 🐱)
+    # Atualizamos lat, lon, o token FCM (caso tenha mudado de celular) e a hora do acesso.
+    # OBS: Verifique se sua tabela tem as colunas 'lat', 'lon' e 'last_location_at'.
+    # Se não tiver 'last_location_at', pode remover essa parte da query ou criar a coluna.
+    
+    update_query = text("""
+        UPDATE clients 
+        SET 
+            lat = :lat, 
+            lon = :lon, 
+            fcm_token = :fcm,
+            last_location_at = NOW() 
+        WHERE id = :id
+    """)
 
+    # Só atualizamos se vieram coordenadas válidas (diferentes de 0)
+    # Mas o fcm_token sempre atualizamos para garantir notificações
+    try:
+        if payload.lat != 0 or payload.lon != 0:
+            await db.execute(update_query, {
+                "lat": payload.lat, 
+                "lon": payload.lon, 
+                "fcm": payload.fcm_token,
+                "id": client['id']
+            })
+            await db.commit()
+            print(f"Localização do cliente {client['id']} atualizada: {payload.lat}, {payload.lon}")
+        else:
+            # Se a localização veio 0.0 (permissão negada), atualizamos pelo menos o token e o horário
+            await db.execute(text("UPDATE clients SET fcm_token = :fcm, last_location_at = NOW() WHERE id = :id"), {
+                "fcm": payload.fcm_token,
+                "id": client['id']
+            })
+            await db.commit()
+
+    except Exception as e:
+        print(f"Erro ao atualizar localização no login: {e}")
+        # Não damos raise error aqui para não impedir o login, apenas logamos o aviso.
+
+    # 4. Retorna o Token
+    fake_token = f"jwt_fake_{client['id']}_{payload.phone}"
+    return {"access_token": fake_token, "message": "Login realizado e local atualizado!"}
     #access_token = create_access_token(subject=client.id, extra_claims={"type": "client", "lvl": client.level})
     #return {"access_token": access_token, "token_type": "bearer", "client_id": client.id, "reputation": client.reputation}
 
