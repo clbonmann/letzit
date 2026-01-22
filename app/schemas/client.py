@@ -40,7 +40,7 @@ class CompleteRegistrationRequest(BaseModel):
     birth_date: date
     email: str
     password: str
-       
+
 class ClientLoginRequest(BaseModel):
     phone: str
     lat: float
@@ -55,12 +55,7 @@ class LoginRequest(BaseModel):
 class ValidateCodeRequest(BaseModel):
     phone_e164: str
     code: str
-    fcm_token: str
-    password: str
-    # Adicione lat/lon aqui se quiser salvar a localização de cadastro do cliente
-    lat: float | None = 0
-    lon: float | None = 0
-
+    
 # --- PROFILE & LOCATION ---
 class ClientProfileResponse(BaseModel):
     id: int

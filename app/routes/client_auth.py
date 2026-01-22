@@ -36,26 +36,9 @@ async def request_verification_code(
     payload: RequestCodeRequest,
     db: AsyncSession = Depends(get_db_session)
 ):
-    """
-    Gera código SMS simulado APENAS se o cliente NÃO existir.
-    """
     phone = payload.phone_e164.strip()
 
-    # 1. VERIFICAÇÃO: Checa se o telefone já existe na tabela 'clients'
-    # Ajuste o nome da coluna 'phone' abaixo caso no seu banco seja 'phone_e164'
-    query_check = text("SELECT 1 FROM clients WHERE phone_e164 = :phone LIMIT 1")
-    result = await db.execute(query_check, {"phone": phone})
-    client_exists = result.scalar()
-
-    if client_exists:
-        # Retorna erro 400 (Bad Request) e para a execução aqui
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Este número de telefone já possui cadastro."
-        )
-
-    # --- Se passou daqui, é porque o telefone NÃO existe ---
-
+    # 1. Gera o código e a expiração
     code = str(random.randint(100000, 999999))  # Código aleatório de 6 dígitos
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
 
@@ -110,9 +93,8 @@ async def validate_verification_code(
     db: AsyncSession = Depends(get_db_session)
 ):
     phone = payload.phone_e164.strip()
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    # 1. Busca o código na tabela temporária (client_first_access)
-    # Ordenamos pelo 'created_at' descrescente para pegar a tentativa mais recente
+    
+    # 1. Busca o código mais recente para esse telefone
     query = text("""
         SELECT code, expires_at 
         FROM client_first_access 
@@ -140,44 +122,7 @@ async def validate_verification_code(
     if saved_code != payload.code:
         raise HTTPException(status_code=400, detail="Código incorreto.")
 
-    # 3. SUCESSO! O código está certo. Vamos criar o Cliente Oficial.
-    hashed_password = pwd_context.hash(payload.password)
-    # Aqui você insere na tabela 'clients'. Ajuste os campos conforme sua tabela real.
-    insert_client = text("""
-        INSERT INTO clients (phone_e164, fcm_token, created_at, geog , last_loc_at, password_hash)
-        VALUES (:phone, :fcm, NOW(), ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, NOW(), :password_hash)
-        RETURNING id
-    """)
-    
-    try:
-        res_insert = await db.execute(insert_client, {
-            "phone": phone,
-            "fcm": payload.fcm_token,
-            "lat": payload.lat,
-            "lon": payload.lon,
-            "password_hash": hashed_password
-        })
-        new_client_id = res_insert.scalar()
-        
-        # 4. Limpeza (Opcional): Apagar o código usado da tabela temporária para não usar de novo
-        await db.execute(text("UPDATE client_first_access SET status = 'FINISHED' WHERE phone_e164 = :phone"), {"phone": phone})
-        
-        await db.commit()
-
-        # 5. Gerar o Token de Acesso (JWT)
-        # Supondo que você tenha uma função create_access_token configurada
-        access_token = create_access_token(subject=new_client_id, extra_claims={"type": "client", "phone": phone})
-        
-        return {
-            "message": "Cliente cadastrado com sucesso!",
-            "access_token": access_token,
-            "client_id": new_client_id
-        }
-
-    except Exception as e:
-        await db.rollback()
-        print(f"Erro ao criar cliente: {e}")
-        raise HTTPException(status_code=500, detail="Erro interno ao criar cadastro.")
+    return {"valid": True, "message": "Código validado com sucesso."}
 
 
 @router.post("/login")
