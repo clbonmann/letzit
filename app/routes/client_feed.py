@@ -140,18 +140,19 @@ async def accept_offer(offer_id: int, bg: BackgroundTasks, db: AsyncSession = De
 @router.get("/restaurants")
 async def get_restaurants_list(
     lat: float,
-    lon: float,
+    long: float, # O Frontend envia 'long', então renomeamos aqui para bater
     page: int = 1,
-    limit: int = 20,
+    limit: int = 10, # Mudamos o padrão para 10 conforme seu pedido
     db: AsyncSession = Depends(get_db_session)
 ):
     """
-    Lists restaurants ordered by distance from the user.
+    Lista restaurantes ordenados por distância num raio de 20km.
     """
     offset = (page - 1) * limit
     
-    # PostGIS distance calculation
-    # ST_Distance returns meters for geography type
+    # PostGIS:
+    # 1. ST_Distance: Calcula a distância para ordenar e exibir.
+    # 2. ST_DWithin: Filtra quem está DENTRO de 20.000 metros (WHERE clause).
     query = text("""
         SELECT 
             id, 
@@ -159,23 +160,25 @@ async def get_restaurants_list(
             logo_url, 
             cover_image_url, 
             city, 
-            ST_Distance(geog, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))::int as distance_m,
-            is_open,
-            reputation
+            address, -- Adicionei address pois o frontend usa
+            reputation, -- O frontend usa para mostrar as estrelinhas
+            ST_Distance(geog, ST_SetSRID(ST_MakePoint(:long, :lat), 4326))::int as distance_meters
         FROM restaurants
         WHERE is_active = TRUE
-        ORDER BY distance_m ASC
+          AND ST_DWithin(geog, ST_SetSRID(ST_MakePoint(:long, :lat), 4326), 20000) -- FILTRO DE 20KM
+        ORDER BY distance_meters ASC
         LIMIT :limit OFFSET :offset
     """)
     
     rows = (await db.execute(query, {
         "lat": lat, 
-        "lon": lon, 
+        "long": long, 
         "limit": limit, 
         "offset": offset
     })).mappings().all()
     
     return rows
+
 @router.get("/my-claims")
 async def get_my_claims(
     uid: int = Depends(get_current_client_id), 
