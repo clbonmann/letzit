@@ -107,17 +107,8 @@ async def get_profile_tickets(
             CASE WHEN c.status = 'ACCEPTED' THEN c.expires_at END ASC,
             c.accepted_at DESC
     """)
-    rows = (await db.execute(query, {"uid": uid})).mappings().all()
-    
-    # Tratamento visual de NO-SHOW
-    results = []
-    now = datetime.now()
-    for row in rows:
-        r = dict(row)
-        if r['status'] == 'ACCEPTED' and r['expires_at'] and r['expires_at'] < now:
-            r['status'] = 'NO_SHOW'
-        results.append(r)
-        
+    results = (await db.execute(query, {"uid": uid})).mappings().all()
+      
     return results
 
 # --- 4. LOCATION ---
