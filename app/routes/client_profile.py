@@ -181,7 +181,7 @@ async def upload_avatar(
         raise HTTPException(500, "Falha no upload da imagem.")
 
     await db.execute(
-        text("UPDATE clients SET avatar_url = :url, avatar_updated_at = NOW() WHERE id = :rid"),
+        text("UPDATE clients SET avatar_url = :url, updated_at = NOW() WHERE id = :rid"),
         {"url": url, "rid": uid}
     )
     await db.commit()
