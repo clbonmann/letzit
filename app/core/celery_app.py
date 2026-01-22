@@ -27,7 +27,8 @@ celery_app.conf.update(
 celery_app.conf.beat_schedule = {
     "run-matchmaker-every-minute": {
         # O caminho aqui DEVE bater com o 'include' e a pasta real
-        "task": "app.tasks.matchmaker.run_fishing_job", 
+        "task": "app.tasks.matchmaker.run_matchmaker_cycle", 
         "schedule": crontab(minute="*"), 
     },
 }
+
