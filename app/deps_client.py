@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from app.settings import settings
 
 # Login do Cliente
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/client/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/client/auth/token")
 
 def get_current_client_id(token: str = Depends(oauth2_scheme)) -> int:
     """

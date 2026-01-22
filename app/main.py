@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
 
 # 1. Client Routes (App Mobile)
 from app.routes import client_auth, client_feed, client_profile

@@ -86,7 +86,7 @@ async def login_manual(
     await db.execute(text("DELETE FROM client_first_access WHERE phone_e164 = :phone"), {"phone": phone})
     await db.commit()
 
-    access_token = create_access_token(subject=client.id, extra_claims={"type": "client"})
+    access_token = create_access_token(subject=client.id, extra_claims={"type": "client", "phone": phone})
     return {"access_token": access_token, "token_type": "bearer", "client_id": client.id}
 
 @router.post("/validate-code")
@@ -151,14 +151,11 @@ async def validate_verification_code(
 
         # 5. Gerar o Token de Acesso (JWT)
         # Supondo que você tenha uma função create_access_token configurada
-        # access_token = create_access_token(data={"sub": phone, "id": new_client_id})
-        
-        # Por enquanto, retornando um token fake para seu app não quebrar:
-        fake_token = f"jwt_fake_{new_client_id}_{phone}"
+        access_token = create_access_token(subject=new_client_id, extra_claims={"type": "client", "phone": phone})
         
         return {
             "message": "Cliente cadastrado com sucesso!",
-            "access_token": fake_token,
+            "access_token": access_token,
             "client_id": new_client_id
         }
 
@@ -173,7 +170,7 @@ async def client_login_app(
     payload: ClientLoginRequest,
     db: AsyncSession = Depends(get_db_session)
 ):
-    query = text("SELECT id, password_hash, fcm_token, is_blocked FROM clients WHERE phone_e164 = :phone")
+    query = text("SELECT id, password_hash, fcm_token, is_blocked ,phone_e164,reputation FROM clients WHERE phone_e164 = :phone")
     result = await db.execute(query, {"phone": payload.phone})
     client = result.mappings().one_or_none()
 
@@ -243,7 +240,36 @@ async def client_login_app(
 
     # 4. Retorna o Token
     fake_token = f"jwt_fake_{client['id']}_{payload.phone}"
-    return {"access_token": fake_token, "message": "Login realizado e local atualizado!"}
-    #access_token = create_access_token(subject=client.id, extra_claims={"type": "client", "lvl": client.level})
-    #return {"access_token": access_token, "token_type": "bearer", "client_id": client.id, "reputation": client.reputation}
+    access_token = create_access_token(subject=client.id, extra_claims={"type": "client", "phone": client.phone_e164})
+    return {"access_token": access_token, "token_type": "bearer", "client_id": client.id, "reputation": client.reputation}
 
+@router.post("/token")
+async def login_for_swagger(
+    form_data: OAuth2PasswordRequestForm = Depends(), 
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Rota exclusiva para o botão 'Authorize' do Swagger.
+    O Swagger envia 'username', mas nós tratamos como 'phone'.
+    """
+    # 1. Busca o cliente pelo telefone (que vem no campo username)
+    query = text("SELECT id, password_hash, phone_e164 FROM clients WHERE phone_e164 = :phone")
+    result = await db.execute(query, {"phone": form_data.username})
+    client = result.mappings().one_or_none()
+
+    # 2. Validações
+    if not client:
+        raise HTTPException(status_code=400, detail="Usuário/Telefone incorreto")
+    
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+    if not client['password_hash'] or not pwd_context.verify(form_data.password, client['password_hash']):
+        raise HTTPException(status_code=400, detail="Senha incorreta")
+
+    # 3. Gera o Token (igual ao login normal)
+    # Como é teste via Swagger, não atualizamos lat/lon/fcm aqui
+    #access_token = f"jwt_fake_{client['id']}_{client['phone_e164']}"
+    
+    # O Swagger EXIGE que o retorno tenha exatamente esses campos:
+    access_token = create_access_token(subject=client.id, extra_claims={"type": "client", "phone": client.phone_e164})
+    return {"access_token": access_token, "token_type": "bearer"}
