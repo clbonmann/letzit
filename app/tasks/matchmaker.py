@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime
 from sqlalchemy import text
-from app.db import async_session_factory # ou AsyncSessionLocal, conforme seu db.py
+from app.db import AsyncSessionLocal as async_session_factory
 from app.core.celery_app import celery_app
 
 # -------------------------------------------
