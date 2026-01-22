@@ -6,15 +6,28 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
 from app.core.celery_app import celery_app
 
-# Pegamos a URL do banco (ajuste se sua ENV tiver outro nome)
-DATABASE_URL = os.getenv("DATABASE_URL")
+# -------------------------------------------
+# 1. PREPARAÇÃO DA URL (CORREÇÃO DO ERRO)
+# -------------------------------------------
+raw_url = os.getenv("DATABASE_URL")
+
+if not raw_url:
+    raise ValueError("DATABASE_URL não configurada no ambiente")
+
+# O Railway fornece 'postgres://', mas o SQLAlchemy Async precisa de 'postgresql+asyncpg://'
+if raw_url.startswith("postgres://"):
+    DATABASE_URL = raw_url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif raw_url.startswith("postgresql://") and "+asyncpg" not in raw_url:
+    # Caso venha postgresql:// mas sem o driver async
+    DATABASE_URL = raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+else:
+    DATABASE_URL = raw_url
 
 # -------------------------------------------
-# 1. A LÓGICA (Async Puro com Engine Descartável)
+# 2. A LÓGICA (Async Puro com Engine Descartável)
 # -------------------------------------------
 async def _execute_matchmaking_logic():
-    # --- CRÍTICO: Criamos engine local com NullPool ---
-    # Isso impede que conexões fiquem presas num loop morto
+    # Criamos engine local com NullPool usando a URL corrigida
     engine = create_async_engine(DATABASE_URL, poolclass=NullPool)
     AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -22,7 +35,6 @@ async def _execute_matchmaking_logic():
         print(f"🎣 [Matchmaker] Iniciando ciclo de pescaria: {datetime.now()}")
         
         # 1. Buscar Ofertas Ativas
-        # Selecionamos radius_km e max_target_total conforme sua regra
         offers_query = text("""
             SELECT 
                 id, 
@@ -109,7 +121,7 @@ async def _execute_matchmaking_logic():
     return f"Ciclo finalizado. Total capturado: {total_caught}"
 
 # ---------------------------------------------------------
-# 2. A TAREFA DO CELERY (SYNC WRAPPER)
+# 3. A TAREFA DO CELERY (SYNC WRAPPER)
 # ---------------------------------------------------------
 @celery_app.task
 def run_matchmaker_cycle():
