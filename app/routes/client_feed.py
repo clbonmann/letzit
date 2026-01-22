@@ -99,7 +99,7 @@ async def get_picks(
     # 3. Estratégia PROXIMITY
     rows = (await db.execute(
         text("""
-            SELECT o.id, o.restaurant_id, r.name AS restaurant_name, r.logo_url, o.title, o.message, o.price_cents, o.original_price_cents, o.end_at, ST_Distance(r.geog, (SELECT geog FROM clients WHERE id=:uid))::int as distance_m, 'NORMAL' as placement
+            SELECT o.id, o.restaurant_id, r.name AS restaurant_name, r.logo_url, o.title, o.message, o.end_at, ST_Distance(r.geog, (SELECT geog FROM clients WHERE id=:uid))::int as distance_m, 'NORMAL' as placement
             FROM offer_targets t JOIN offers o ON o.id = t.offer_id JOIN restaurants r ON r.id = o.restaurant_id
             WHERE t.client_id = :uid AND t.used_at IS NULL AND o.status = 'ACTIVE' AND o.end_at > NOW()
             ORDER BY t.created_at DESC LIMIT 5

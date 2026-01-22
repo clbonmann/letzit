@@ -4,7 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import AsyncSessionLocal
-from app.celery_app import celery_app
+from app.core.celery_app import celery_app
 
 
 # parâmetros de negócio (ajuste depois)

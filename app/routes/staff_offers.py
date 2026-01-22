@@ -222,7 +222,8 @@ async def create_offer(
         max_target_total=payload.max_target_total,
         audience_estimate=audience_estimate,
         created_at=now,
-        updated_at=now
+        updated_at=now,
+        geog=restaurant_geog
     )
 
     db.add(new_offer)

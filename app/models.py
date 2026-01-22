@@ -294,7 +294,7 @@ class Offer(Base):
     payment_method = Column(String, default="CREDITS")  # "CREDITS" ou "PAY_AS_YOU_GO"
 
     cost_amount = Column(Numeric(10, 2), default=0.00)
-
+    geog = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
 
 class OfferTarget(Base):
     __tablename__ = "offer_targets"
