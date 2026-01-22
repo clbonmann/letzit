@@ -62,7 +62,6 @@ async def list_my_restaurants(
 
     base_sql = """
         SELECT id, name, cnpj, logo_url,
-               NULLIF(COALESCE(city, ''), '') AS city,
                address_street, address_number, address_district,
                address_city, address_state, address_zip, address_country, description, phone, is_open, working_hours,
                ST_Y(geog::geometry) as lat,
