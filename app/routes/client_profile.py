@@ -23,7 +23,6 @@ async def get_my_profile(
 
 # --- 2. UPDATE PERFIL ---
 @router.patch("", response_model=ClientProfileResponse)
-@router.patch("", response_model=ClientProfileResponse)
 async def update_my_profile(
     payload: ClientUpdateProfileRequest,
     uid: int = Depends(get_current_client_id),
