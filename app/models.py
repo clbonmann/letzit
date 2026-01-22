@@ -5,6 +5,7 @@ from geoalchemy2 import Geography
 from sqlalchemy import (
     BigInteger,
     Date,
+    Float,
     SmallInteger,
     Boolean,
     CheckConstraint,
@@ -183,8 +184,9 @@ class Restaurant(Base):
     
     is_active = Column(Boolean, nullable=False, default=True)
     is_open = Column(Boolean, nullable=False, default=True)
-    working_hours = Column(BigInteger, nullable=True) # Horas de funcionamento diárias
     
+    working_hours = Column(BigInteger, nullable=True) # Horas de funcionamento diárias
+    reviews = relationship("RestaurantReview", back_populates="restaurant")
     offers = relationship("Offer", back_populates="restaurant")
     staff = relationship("RestaurantStaff", back_populates="restaurant")
 
@@ -192,7 +194,7 @@ class Restaurant(Base):
 
     # Saldo em conta de KM
     balance_km = Column(Integer, default=0, nullable=False)
-    reputation = Column(float, default=0, nullable=True)
+    reputation = Column(Float, default=0, nullable=True)
     # NEW relationships (taxonomy)
     features = relationship(
     "RestaurantFeature",
