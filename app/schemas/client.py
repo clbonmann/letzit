@@ -30,6 +30,17 @@ def get_address_from_coords(lat, lon):
 class RequestCodeRequest(BaseModel):
     phone_e164: str
 
+class CheckPhoneRequest(BaseModel):
+    phone: str
+
+class CompleteRegistrationRequest(BaseModel):
+    phone: str
+    code: str # Precisamos do código novamente para garantir que validou
+    name: str
+    birth_date: date
+    email: str
+    password: str
+       
 class ClientLoginRequest(BaseModel):
     phone: str
     lat: float

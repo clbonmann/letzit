@@ -10,11 +10,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from passlib.context import CryptContext
 
 from app.db import get_db_session
-from app.security import create_access_token
+from app.security import create_access_token, get_password_hash
 # IMPORTANDO O SCHEMA
-from app.schemas.client import RequestCodeRequest, ClientLoginRequest, ValidateCodeRequest, get_address_from_coords
+from app.schemas.client import CheckPhoneRequest, CompleteRegistrationRequest, RequestCodeRequest, ClientLoginRequest, ValidateCodeRequest, get_address_from_coords
 
 router = APIRouter(prefix="/client/auth", tags=["client-auth"])
+
+@router.post("/check-phone")
+async def check_phone(
+    payload: CheckPhoneRequest,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Passo 1: Verifica se o telefone já existe no banco."""
+    # Limpa caracteres não numéricos se necessário
+    phone_clean = "".join(filter(str.isdigit, payload.phone))
+    
+    query = text("SELECT id FROM clients WHERE phone_e164 = :phone")
+    result = await db.execute(query, {"phone": phone_clean})
+    exists = result.scalar() is not None
+    
+    return {"exists": exists}
 
 @router.post("/request-code")
 async def request_verification_code(
@@ -273,3 +288,47 @@ async def login_for_swagger(
     # O Swagger EXIGE que o retorno tenha exatamente esses campos:
     access_token = create_access_token(subject=client.id, extra_claims={"type": "client", "phone": client.phone_e164})
     return {"access_token": access_token, "token_type": "bearer"}
+@router.post("/validate-code")
+async def validate_code(
+    payload: ValidateCodeRequest,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Apenas valida se o código bate (para o front liberar a próx tela)."""
+    # Lógica de validação real aqui
+    if payload.code == "123456":
+        return {"valid": True}
+    raise HTTPException(status_code=400, detail="Código inválido.")
+
+@router.post("/register")
+async def register_client(
+    payload: CompleteRegistrationRequest,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Passo Final: Cria o usuário no banco."""
+    # 1. Valida código novamente por segurança
+    if payload.code != "123456":
+        raise HTTPException(400, "Código expirou ou inválido.")
+
+    # 2. Hash da senha
+    pwd_hash = get_password_hash(payload.password)
+    
+    # 3. Insere
+    try:
+        query = text("""
+            INSERT INTO clients (phone_e164, name, birth_date, email, password_hash, created_at)
+            VALUES (:phone, :name, :bdate, :email, :pwd, NOW())
+            RETURNING id
+        """)
+        await db.execute(query, {
+            "phone": payload.phone,
+            "name": payload.name,
+            "bdate": payload.birth_date,
+            "email": payload.email,
+            "pwd": pwd_hash
+        })
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(400, "Erro ao criar conta. Telefone ou email já usados.")
+
+    return {"message": "Conta criada! Faça login."}
