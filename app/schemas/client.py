@@ -3,7 +3,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, EmailStr
 from geopy.geocoders import Nominatim
 
-# Inicializa o geolocator (Defina um user_agent único para seu app)
+# Inicializa o geolocator (Defina um user_agent único)
 geolocator = Nominatim(user_agent="letzit_delivery_app_v1")
 
 def get_address_from_coords(lat, lon):
