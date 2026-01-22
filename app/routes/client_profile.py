@@ -1,11 +1,12 @@
 from __future__ import annotations
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db_session
 from app.deps_client import get_current_client_id 
 from app.schemas.client import ClientProfileResponse, ClientUpdateProfileRequest, LocationUpdateSchema
+from app.services.storage import upload_image 
 
 router = APIRouter(prefix="/client/profile", tags=["client-profile"])
 
@@ -151,3 +152,41 @@ async def delete_account(
         await db.rollback()
         raise HTTPException(500, "Erro ao excluir conta.")
     return {"message": "Conta excluída."}
+
+@router.post("/avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db_session),
+    client: dict = Depends(get_current_client_id)
+):
+    """Upload Logo to Cloudinary + DB Update."""
+    client_id = int(client["id"])
+
+    try:
+        transformations = {
+            "width": 150, 
+            "height": 150, 
+            "crop": "pad",
+            "background": "white",
+            "gravity": "center",
+            "quality": "auto",
+            "fetch_format": "auto"
+        }
+
+        url = upload_image(
+            file, 
+            folder=f"avatares/{client_id}",
+            transformation=transformations 
+        )
+        
+    except Exception as e:
+        print(f"Upload Error: {e}")
+        raise HTTPException(500, "Falha no upload da imagem.")
+
+    await db.execute(
+        text("UPDATE clients SET avatar_url = :url, avatar_updated_at = NOW() WHERE id = :rid"),
+        {"url": url, "rid": client_id}
+    )
+    await db.commit()
+
+    return {"status": "success", "avatar_url": url}
