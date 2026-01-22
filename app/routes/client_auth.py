@@ -36,7 +36,7 @@ async def request_verification_code(
     payload: RequestCodeRequest,
     db: AsyncSession = Depends(get_db_session)
 ):
-    phone = payload.phone_e164.strip()
+    phone = payload.phone.strip()
 
     # 1. Gera o código e a expiração
     code = str(random.randint(100000, 999999))  # Código aleatório de 6 dígitos
@@ -92,7 +92,7 @@ async def validate_verification_code(
     payload: ValidateCodeRequest,
     db: AsyncSession = Depends(get_db_session)
 ):
-    phone = payload.phone_e164.strip()
+    phone = payload.phone.strip()
     
     # 1. Busca o código mais recente para esse telefone
     query = text("""
