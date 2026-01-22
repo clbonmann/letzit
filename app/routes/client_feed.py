@@ -176,3 +176,31 @@ async def get_restaurants_list(
     })).mappings().all()
     
     return rows
+@router.get("/my-claims")
+async def get_my_claims(
+    uid: int = Depends(get_current_client_id), 
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Retorna os cupons ATIVOS do usuário (Status 'ACCEPTED').
+    """
+    query = text("""
+        SELECT 
+            c.id as claim_id,
+            c.qr_token,
+            c.expires_at,
+            c.status,
+            o.title,
+            r.name as restaurant_name,
+            r.logo_url
+        FROM offer_claims c
+        JOIN offers o ON o.id = c.offer_id
+        JOIN restaurants r ON r.id = o.restaurant_id
+        WHERE c.client_id = :uid 
+        AND c.status = 'ACCEPTED'
+        AND c.expires_at > NOW()
+        ORDER BY c.expires_at ASC
+    """)
+    
+    rows = (await db.execute(query, {"uid": uid})).mappings().all()
+    return rows
