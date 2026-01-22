@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +16,7 @@ async def get_my_profile(
     db: AsyncSession = Depends(get_db_session),
 ):
     """Retorna dados do cliente logado."""
-    query = text("SELECT id, name, phone_e164 as phone, email, avatar_url, reputation, level, created_at FROM clients WHERE id = :uid")
+    query = text("SELECT id, name, phone_e164 as phone, email, avatar_url, birth_date, reputation, level, created_at FROM clients WHERE id = :uid")
     row = (await db.execute(query, {"uid": uid})).mappings().first()
     if not row: raise HTTPException(404, "Cliente não encontrado.")
     return ClientProfileResponse(**row)
@@ -32,6 +32,7 @@ async def update_my_profile(
     if payload.name: fields.append("name = :name"); params["name"] = payload.name
     if payload.email: fields.append("email = :email"); params["email"] = payload.email
     if payload.avatar_url: fields.append("avatar_url = :avatar"); params["avatar"] = payload.avatar_url
+    if payload.birth_date: fields.append("birth_date = :birth_date"); params["birth_date"] = payload.birth_date
     
     if not fields: return await get_my_profile(uid, db)
     

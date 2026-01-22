@@ -4,6 +4,7 @@ from geoalchemy2 import Geography
 
 from sqlalchemy import (
     BigInteger,
+    Date,
     SmallInteger,
     Boolean,
     CheckConstraint,
@@ -117,6 +118,8 @@ class Client(Base):
     fcm_token = Column(String, nullable=True)
     email = Column(String, nullable=True)
     name = Column(String, nullable=True)
+    birth_date = Column(Date, nullable=True)
+    avatar_url = Column(String, nullable=True)
     # Geo
     last_loc_at = Column(DateTime(timezone=True), nullable=True)
     loc_accuracy_m = Column(Integer, nullable=True, default=0)

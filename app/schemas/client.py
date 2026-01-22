@@ -1,5 +1,5 @@
 from typing import Optional
-from datetime import datetime
+from datetime import date, datetime
 from pydantic import BaseModel, EmailStr
 from geopy.geocoders import Nominatim
 
@@ -56,15 +56,17 @@ class ClientProfileResponse(BaseModel):
     name: str | None
     phone: str
     email: str | None
+    birth_date: date | None
     avatar_url: str | None
     reputation: float
     level: int
     created_at: datetime
 
 class ClientUpdateProfileRequest(BaseModel):
-    name: Optional[str] = None
-    email: Optional[EmailStr] = None
-    avatar_url: Optional[str] = None
+    name: str | None
+    email: str | None
+    birth_date: date | None
+    avatar_url: str | None
 
 class LocationUpdateSchema(BaseModel):
     latitude: float
@@ -81,3 +83,8 @@ class AcceptOfferResponse(BaseModel):
     accepted_count: int | None = None
     accept_limit: int | None = None
 
+class UpdateProfileRequest(BaseModel):
+    name: Optional[str] = None
+    birth_date: Optional[date] = None
+    email: Optional[EmailStr] = None
+    avatar_url: Optional[str] = None
