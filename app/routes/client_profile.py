@@ -45,12 +45,8 @@ async def update_my_profile(
             fields.append("email = :email")
             params["email"] = payload.email
 
-    # 3. Avatar
-    if payload.avatar_url is not None: 
-        fields.append("avatar_url = :avatar")
-        params["avatar"] = payload.avatar_url
         
-    # 4. Data de Nascimento
+    # 3. Data de Nascimento
     if payload.birth_date is not None: 
         fields.append("birth_date = :birth_date") # NOME UNIFICADO
         params["birth_date"] = payload.birth_date
@@ -66,7 +62,7 @@ async def update_my_profile(
         UPDATE clients 
         SET {', '.join(fields)} 
         WHERE id = :uid 
-        RETURNING id, name, phone_e164 as phone, email, avatar_url, birth_date, reputation, level, created_at
+        RETURNING id, name, phone_e164 as phone, email, birth_date, reputation, level, created_at, avatar_url
     """)
     
     try:

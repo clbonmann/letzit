@@ -72,7 +72,6 @@ class ClientUpdateProfileRequest(BaseModel):
     name: str | None
     email: str | None
     birth_date: date | None
-    avatar_url: str | None
 
 class LocationUpdateSchema(BaseModel):
     latitude: float
