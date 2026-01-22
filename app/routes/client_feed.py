@@ -159,8 +159,8 @@ async def get_restaurants_list(
             name, 
             logo_url, 
             cover_image_url, 
-            city, 
-            address, -- Adicionei address pois o frontend usa
+            address_city, 
+            address_street as address, -- Adicionei address pois o frontend usa
             reputation, -- O frontend usa para mostrar as estrelinhas
             ST_Distance(geog, ST_SetSRID(ST_MakePoint(:long, :lat), 4326))::int as distance_meters
         FROM restaurants
