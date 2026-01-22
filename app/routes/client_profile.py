@@ -93,9 +93,8 @@ async def get_profile_tickets(
     """
     query = text("""
         SELECT 
-            c.id as claim_id, c.qr_token, c.accepted_at, c.expires_at, c.status, c.redeemed_at, c.canceled_at,
-            o.title
-            r.name as restaurant_name, r.logo_url,
+            c.id as claim_id,c.client_id , c.qr_token, c.accepted_at, c.expires_at, c.status, c.redeemed_at, c.canceled_at,
+            o.title, r.name as restaurant_name, r.logo_url,
             CASE WHEN rv.id IS NOT NULL THEN TRUE ELSE FALSE END as has_review
         FROM offer_claims c
         JOIN offers o ON o.id = c.offer_id
