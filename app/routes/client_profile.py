@@ -157,11 +157,8 @@ async def delete_account(
 async def upload_avatar(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db_session),
-    client: dict = Depends(get_current_client_id)
+    uid: int = Depends(get_current_client_id),
 ):
-    """Upload Logo to Cloudinary + DB Update."""
-    client_id = int(client["id"])
-
     try:
         transformations = {
             "width": 150, 
@@ -175,7 +172,7 @@ async def upload_avatar(
 
         url = upload_image(
             file, 
-            folder=f"avatares/{client_id}",
+            folder=f"avatares/{uid}",
             transformation=transformations 
         )
         
@@ -185,7 +182,7 @@ async def upload_avatar(
 
     await db.execute(
         text("UPDATE clients SET avatar_url = :url, avatar_updated_at = NOW() WHERE id = :rid"),
-        {"url": url, "rid": client_id}
+        {"url": url, "rid": uid}
     )
     await db.commit()
 
