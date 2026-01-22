@@ -192,7 +192,7 @@ class Restaurant(Base):
 
     # Saldo em conta de KM
     balance_km = Column(Integer, default=0, nullable=False)
-
+    reputation = Column(float, default=0, nullable=True)
     # NEW relationships (taxonomy)
     features = relationship(
     "RestaurantFeature",

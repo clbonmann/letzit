@@ -158,6 +158,7 @@ async def get_restaurants_list(
             id, 
             name, 
             logo_url, 
+            is_open,
             cover_image_url, 
             address_city, 
             address_street as address, -- Adicionei address pois o frontend usa
