@@ -233,14 +233,20 @@ async def login_for_swagger(
     # O Swagger EXIGE que o retorno tenha exatamente esses campos:
     access_token = create_access_token(subject=client.id, extra_claims={"type": "client", "phone": client.phone_e164})
     return {"access_token": access_token, "token_type": "bearer"}
+
 @router.post("/validate-code")
 async def validate_code(
     payload: ValidateCodeRequest,
     db: AsyncSession = Depends(get_db_session)
 ):
+    phone_clean = "".join(filter(str.isdigit, payload.phone))
+    
+    query = text("SELECT code FROM client_first_access WHERE phone_e164 = :phone")
+    result = await db.execute(query, {"phone": phone_clean})
+    record = result.mappings().one_or_none()
     """Apenas valida se o código bate (para o front liberar a próx tela)."""
     # Lógica de validação real aqui
-    if payload.code == "123456":
+    if payload.code ==  record['code']:
         return {"valid": True}
     raise HTTPException(status_code=400, detail="Código inválido.")
 
@@ -250,10 +256,7 @@ async def register_client(
     db: AsyncSession = Depends(get_db_session)
 ):
     """Passo Final: Cria o usuário no banco."""
-    # 1. Valida código novamente por segurança
-    if payload.code != "123456":
-        raise HTTPException(400, "Código expirou ou inválido.")
-
+ 
     # 2. Hash da senha
     pwd_hash = get_password_hash(payload.password)
     
