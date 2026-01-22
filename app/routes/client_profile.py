@@ -23,29 +23,45 @@ async def get_my_profile(
 
 # --- 2. UPDATE PERFIL ---
 @router.patch("", response_model=ClientProfileResponse)
+@router.patch("", response_model=ClientProfileResponse)
 async def update_my_profile(
     payload: ClientUpdateProfileRequest,
     uid: int = Depends(get_current_client_id),
     db: AsyncSession = Depends(get_db_session),
 ):
-    """Atualiza dados cadastrais (Nome, Email, Nascimento, Avatar)."""
+    """Atualiza dados cadastrais."""
     fields, params = [], {"uid": uid}
     
-    # Usamos 'is not None' para permitir que o usuário envie string vazia se quiser limpar, ou validar no schema
+    # 1. Nome
     if payload.name is not None: 
-        fields.append("name = :name"); params["name"] = payload.name
+        fields.append("name = :name")
+        params["name"] = payload.name
+        
+    # 2. Email (String vazia vira NULL no banco para não dar erro de unique em strings vazias)
     if payload.email is not None: 
-        fields.append("email = :email"); params["email"] = payload.email
+        if payload.email == "": 
+            fields.append("email = NULL") # Força null se vier vazio
+        else:
+            fields.append("email = :email")
+            params["email"] = payload.email
+
+    # 3. Avatar
     if payload.avatar_url is not None: 
-        fields.append("avatar_url = :avatar"); params["avatar"] = payload.avatar_url
+        fields.append("avatar_url = :avatar")
+        params["avatar"] = payload.avatar_url
+        
+    # 4. Data de Nascimento
     if payload.birth_date is not None: 
-        fields.append("birth_date = :bdate"); params["bdate"] = payload.birth_date
+        fields.append("birth_date = :birth_date") # NOME UNIFICADO
+        params["birth_date"] = payload.birth_date
     
-    if not fields: return await get_my_profile(uid, db)
+    # Se não tem campos, retorna o perfil atual
+    if not fields: 
+        return await get_my_profile(uid, db)
     
     fields.append("updated_at = NOW()")
     
-    # Query de update retornando os dados atualizados
+    # Query Montada
     query = text(f"""
         UPDATE clients 
         SET {', '.join(fields)} 
@@ -57,12 +73,18 @@ async def update_my_profile(
         row = (await db.execute(query, params)).mappings().first()
         await db.commit()
         return ClientProfileResponse(**row)
+        
     except Exception as e:
         await db.rollback()
-        # Captura erro de email duplicado (se tiver UNIQUE constraint no banco)
-        if "unique" in str(e).lower() and "email" in str(e).lower():
+        error_msg = str(e).lower()
+        print(f"ERRO UPDATE PROFILE: {error_msg}") # Log no terminal para debug
+        
+        if "unique" in error_msg and "email" in error_msg:
             raise HTTPException(400, "Este e-mail já está em uso.")
-        raise HTTPException(500, "Erro ao atualizar perfil.")
+        if "date" in error_msg or "time" in error_msg:
+            raise HTTPException(400, "Formato de data inválido.")
+            
+        raise HTTPException(500, "Erro interno ao atualizar perfil.")
 
 # --- 3. MEUS TICKETS (CRUCIAL PARA O APP) ---
 @router.get("/tickets")
