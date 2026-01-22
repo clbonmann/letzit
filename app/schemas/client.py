@@ -93,3 +93,10 @@ class UpdateProfileRequest(BaseModel):
     birth_date: Optional[date] = None
     email: Optional[EmailStr] = None
     avatar_url: Optional[str] = None
+
+class ReviewCreateRequest(BaseModel):
+    claim_id: int
+    rating_food: int
+    rating_drink: int
+    rating_environment: int
+    comment: Optional[str] = None

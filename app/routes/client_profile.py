@@ -5,7 +5,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db_session
 from app.deps_client import get_current_client_id 
-from app.schemas.client import ClientProfileResponse, ClientUpdateProfileRequest, LocationUpdateSchema
+from app.schemas.client import ClientProfileResponse, ClientUpdateProfileRequest, LocationUpdateSchema, ReviewCreateRequest
 from app.services.storage import upload_image 
 
 router = APIRouter(prefix="/client/profile", tags=["client-profile"])
@@ -89,26 +89,25 @@ async def get_profile_tickets(
     db: AsyncSession = Depends(get_db_session)
 ):
     """
-    Retorna lista unificada de tickets:
-    1. Ativos (ACCEPTED) primeiro (por urgência).
-    2. Histórico (USED, EXPIRED, NO_SHOW) depois (por data).
+    Retorna tickets. Adicionamos o campo 'has_review' para saber se mostra o botão.
     """
     query = text("""
         SELECT 
-            c.id as claim_id, c.qr_token, c.expires_at, c.accepted_at, c.redeemed_at,
+            c.id as claim_id, c.qr_token, c.expires_at, c.status, c.used_at, c.created_at,
             o.title, o.price_cents, 
-            r.name as restaurant_name, r.logo_url
+            r.name as restaurant_name, r.logo_url,
+            CASE WHEN rv.id IS NOT NULL THEN TRUE ELSE FALSE END as has_review
         FROM offer_claims c
         JOIN offers o ON o.id = c.offer_id
         JOIN restaurants r ON r.id = o.restaurant_id
+        LEFT JOIN restaurant_reviews rv ON rv.offer_claim_id = c.id -- Checa se já avaliou
         WHERE c.client_id = :uid
         ORDER BY 
             CASE WHEN c.status = 'ACCEPTED' THEN 0 ELSE 1 END ASC,
-            CASE WHEN c.status = 'ACCEPTED' THEN c.expires_at END ASC,
-            c.accepted_at DESC
+            c.created_at DESC
     """)
     results = (await db.execute(query, {"uid": uid})).mappings().all()
-      
+
     return results
 
 # --- 4. LOCATION ---
@@ -174,3 +173,55 @@ async def upload_avatar(
     await db.commit()
 
     return {"status": "success", "avatar_url": url}
+
+@router.post("/review")
+async def create_review(
+    payload: ReviewCreateRequest,
+    uid: int = Depends(get_current_client_id), 
+    db: AsyncSession = Depends(get_db_session)
+):
+    # 1. Busca dados do ticket para garantir que pertence ao usuário e está USADO
+    query_check = text("""
+        SELECT c.id, c.status, c.client_id, o.restaurant_id 
+        FROM offer_claims c
+        JOIN offers o ON o.id = c.offer_id
+        WHERE c.id = :cid AND c.client_id = :uid
+    """)
+    ticket = (await db.execute(query_check, {"cid": payload.claim_id, "uid": uid})).mappings().first()
+
+    if not ticket:
+        raise HTTPException(404, "Ticket não encontrado.")
+    
+    if ticket.status != 'USED':
+        raise HTTPException(400, "Você só pode avaliar ofertas que já utilizou.")
+
+    # 2. Calcula a média
+    avg = (payload.rating_food + payload.rating_drink + payload.rating_environment) / 3.0
+
+    # 3. Insere a Review
+    try:
+        insert_query = text("""
+            INSERT INTO restaurant_reviews (client_id, restaurant_id, offer_claim_id, rating_food, rating_drink, rating_environment, average_score, comment)
+            VALUES (:uid, :rid, :cid, :rf, :rd, :re, :avg, :comm)
+        """)
+        await db.execute(insert_query, {
+            "uid": uid,
+            "rid": ticket.restaurant_id,
+            "cid": payload.claim_id,
+            "rf": payload.rating_food,
+            "rd": payload.rating_drink,
+            "re": payload.rating_environment,
+            "avg": round(avg, 1),
+            "comm": payload.comment
+        })
+        
+        # Opcional: Aqui você poderia atualizar a reputação média do restaurante na tabela restaurants
+        
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        if "unique" in str(e).lower():
+            raise HTTPException(400, "Você já avaliou este ticket.")
+        raise HTTPException(500, "Erro ao salvar avaliação.")
+
+    return {"message": "Avaliação enviada com sucesso!"}
