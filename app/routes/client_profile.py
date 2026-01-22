@@ -191,7 +191,7 @@ async def create_review(
     if not ticket:
         raise HTTPException(404, "Ticket não encontrado.")
     
-    if ticket.status != 'USED':
+    if ticket.status != 'REDEEMED':
         raise HTTPException(400, "Você só pode avaliar ofertas que já utilizou.")
 
     # 2. Calcula a média

@@ -367,3 +367,57 @@ class ClientFirstAccess(Base):
     accepted_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=False)   
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class RestaurantReview(Base):
+    __tablename__ = "restaurant_reviews"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    
+    # Relacionamentos (Foreign Keys)
+    client_id = Column(
+        BigInteger, 
+        ForeignKey("clients.id", ondelete="CASCADE"), 
+        nullable=False
+    )
+    
+    restaurant_id = Column(
+        BigInteger, 
+        ForeignKey("restaurants.id", ondelete="CASCADE"), 
+        nullable=False
+    )
+    
+    # offer_claim_id DEVE ser único (unique=True) para garantir 1 review por ticket
+    offer_claim_id = Column(
+        BigInteger, 
+        ForeignKey("offer_claims.id", ondelete="CASCADE"), 
+        nullable=False,
+        unique=True 
+    )
+
+    # Notas (1 a 5)
+    rating_food = Column(Integer, nullable=False)
+    rating_drink = Column(Integer, nullable=False)
+    rating_environment = Column(Integer, nullable=False)
+
+    # Média calculada (Ex: 4.5)
+    average_score = Column(Numeric(3, 1), nullable=False)
+
+    # Comentário
+    comment = Column(Text, nullable=True)
+
+    # Timestamp
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # --- RELACIONAMENTOS (ORM) ---
+    # Adicione estes back_populates nas outras classes se quiser navegação bidirecional
+    client = relationship("Client", back_populates="reviews")
+    restaurant = relationship("Restaurant", back_populates="reviews")
+    claim = relationship("OfferClaim", back_populates="review")
+
+    # --- REGRAS DE BANCO (CONSTRAINTS) ---
+    # Isso garante via Alembic que o banco rejeite números fora de 1-5
+    __table_args__ = (
+        CheckConstraint('rating_food >= 1 AND rating_food <= 5', name='check_rating_food'),
+        CheckConstraint('rating_drink >= 1 AND rating_drink <= 5', name='check_rating_drink'),
+        CheckConstraint('rating_environment >= 1 AND rating_environment <= 5', name='check_rating_environment'),
+    )
