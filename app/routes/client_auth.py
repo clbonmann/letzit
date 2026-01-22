@@ -184,7 +184,7 @@ async def client_login_app(
                 print(f"Localização do cliente {client['id']} atualizada: {payload.lat}, {payload.lon}")
             else:
                 # Se a localização veio 0.0 (permissão negada), atualizamos pelo menos o token e o horário
-                await db.execute(text("UPDATE clients SET fcm_token = :fcm, last_location_at = NOW() WHERE id = :id"), {
+                await db.execute(text("UPDATE clients SET fcm_token = :fcm, last_loc_at = NOW() WHERE id = :id"), {
                 "fcm": payload.fcm_token,
                 "id": client['id']
                 })
