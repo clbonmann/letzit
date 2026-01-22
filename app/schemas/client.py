@@ -28,7 +28,7 @@ def get_address_from_coords(lat, lon):
     
 # --- AUTH ---
 class RequestCodeRequest(BaseModel):
-    phone_e164: str
+    phone: str
 
 class CheckPhoneRequest(BaseModel):
     phone: str
@@ -53,9 +53,9 @@ class LoginRequest(BaseModel):
     password: str
 
 class ValidateCodeRequest(BaseModel):
-    phone_e164: str
+    phone: str
     code: str
-    
+
 # --- PROFILE & LOCATION ---
 class ClientProfileResponse(BaseModel):
     id: int
