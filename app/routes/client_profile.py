@@ -93,8 +93,8 @@ async def get_profile_tickets(
     """
     query = text("""
         SELECT 
-            c.id as claim_id, c.qr_token, c.expires_at, c.status, c.used_at, c.created_at,
-            o.title, o.price_cents, 
+            c.id as claim_id, c.qr_token, c.accepted_at, c.expires_at, c.status, c.redeemed_at, c.canceled_at,
+            o.title
             r.name as restaurant_name, r.logo_url,
             CASE WHEN rv.id IS NOT NULL THEN TRUE ELSE FALSE END as has_review
         FROM offer_claims c
@@ -104,7 +104,7 @@ async def get_profile_tickets(
         WHERE c.client_id = :uid
         ORDER BY 
             CASE WHEN c.status = 'ACCEPTED' THEN 0 ELSE 1 END ASC,
-            c.created_at DESC
+            c.accepted_at DESC
     """)
     results = (await db.execute(query, {"uid": uid})).mappings().all()
 
