@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from app.db import async_session_factory
+from app.db import AsyncSessionLocal as async_session_factory
 from app.core.celery_app import celery_app # Assumindo que o app está aqui
 
 @celery_app.task
