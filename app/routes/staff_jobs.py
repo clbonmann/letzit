@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
-import app.jobs.no_show as no_show
+import app.tasks.no_show as no_show
 
 router = APIRouter(prefix="/staff/jobs", tags=["staff-jobs"])
 
