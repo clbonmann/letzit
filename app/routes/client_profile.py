@@ -99,7 +99,7 @@ async def get_profile_tickets(
     """
     query = text("""
         SELECT 
-            c.id as claim_id, c.qr_token, c.expires_at, c.status, c.used_at, c.created_at,
+            c.id as claim_id, c.qr_token, c.expires_at, c.accepted_at, c.created_at,
             o.title, o.price_cents, 
             r.name as restaurant_name, r.logo_url
         FROM offer_claims c
