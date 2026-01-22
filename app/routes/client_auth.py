@@ -53,40 +53,6 @@ async def request_verification_code(
     print(f"=== SMS SIMULADO PARA {phone}: CÓDIGO {code} ===")
     return {"message": "Código enviado"}
 
-@router.post("/login/manual")
-async def login_manual(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: AsyncSession = Depends(get_db_session)
-):
-    """[BACKUP/TESTE] Login manual via código."""
-    phone = form_data.clientname.strip()
-    code_received = form_data.password.strip()
-    now = datetime.now(timezone.utc)
-
-    row = (await db.execute(
-        text("SELECT code, expires_at FROM client_first_access WHERE phone_e164 = :phone ORDER BY created_at DESC LIMIT 1"),
-        {"phone": phone}
-    )).mappings().first()
-
-    if not row or row["code"] != code_received or row["expires_at"] < now:
-        raise HTTPException(400, "Código inválido ou expirado.")
-
-    query = text("""
-        INSERT INTO public.clients (phone_e164, created_at, "level", reputation, is_blocked, last_loc_at, geog) 
-        VALUES (:phone, NOW(), 1, 5.0, FALSE, NOW(), ST_SetSRID(ST_MakePoint(0, 0), 4326))
-        ON CONFLICT (phone_e164) DO UPDATE SET last_loc_at = NOW()
-        RETURNING id, is_blocked
-    """)
-    client = (await db.execute(query, {"phone": phone})).mappings().first()
-    await db.commit()
-
-    if client.is_blocked: raise HTTPException(403, "Conta bloqueada.")
-    await db.execute(text("DELETE FROM client_first_access WHERE phone_e164 = :phone"), {"phone": phone})
-    await db.commit()
-
-    access_token = create_access_token(subject=client.id, extra_claims={"type": "client", "phone": phone})
-    return {"access_token": access_token, "token_type": "bearer", "client_id": client.id}
-
 @router.post("/validate-code")
 async def validate_verification_code(
     payload: ValidateCodeRequest,
@@ -124,6 +90,36 @@ async def validate_verification_code(
 
     return {"valid": True, "message": "Código validado com sucesso."}
 
+@router.post("/register")
+async def register_client(
+    payload: CompleteRegistrationRequest,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Passo Final: Cria o usuário no banco."""
+ 
+    # 2. Hash da senha
+    pwd_hash = get_password_hash(payload.password)
+    
+    # 3. Insere
+    try:
+        query = text("""
+            INSERT INTO clients (phone_e164, name, birth_date, email, password_hash, created_at)
+            VALUES (:phone, :name, :bdate, :email, :pwd, NOW())
+            RETURNING id
+        """)
+        await db.execute(query, {
+            "phone": payload.phone,
+            "name": payload.name,
+            "bdate": payload.birth_date,
+            "email": payload.email,
+            "pwd": pwd_hash
+        })
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(400, "Erro ao criar conta. Telefone ou email já usados.")
+
+    return {"message": "Conta criada! Faça login."}
 
 @router.post("/login")
 async def client_login_app(
@@ -233,50 +229,3 @@ async def login_for_swagger(
     # O Swagger EXIGE que o retorno tenha exatamente esses campos:
     access_token = create_access_token(subject=client.id, extra_claims={"type": "client", "phone": client.phone_e164})
     return {"access_token": access_token, "token_type": "bearer"}
-
-@router.post("/validate-code")
-async def validate_code(
-    payload: ValidateCodeRequest,
-    db: AsyncSession = Depends(get_db_session)
-):
-    phone_clean = "".join(filter(str.isdigit, payload.phone))
-    
-    query = text("SELECT code FROM client_first_access WHERE phone_e164 = :phone")
-    result = await db.execute(query, {"phone": phone_clean})
-    record = result.mappings().one_or_none()
-    """Apenas valida se o código bate (para o front liberar a próx tela)."""
-    # Lógica de validação real aqui
-    if payload.code ==  record['code']:
-        return {"valid": True}
-    raise HTTPException(status_code=400, detail="Código inválido.")
-
-@router.post("/register")
-async def register_client(
-    payload: CompleteRegistrationRequest,
-    db: AsyncSession = Depends(get_db_session)
-):
-    """Passo Final: Cria o usuário no banco."""
- 
-    # 2. Hash da senha
-    pwd_hash = get_password_hash(payload.password)
-    
-    # 3. Insere
-    try:
-        query = text("""
-            INSERT INTO clients (phone_e164, name, birth_date, email, password_hash, created_at)
-            VALUES (:phone, :name, :bdate, :email, :pwd, NOW())
-            RETURNING id
-        """)
-        await db.execute(query, {
-            "phone": payload.phone,
-            "name": payload.name,
-            "bdate": payload.birth_date,
-            "email": payload.email,
-            "pwd": pwd_hash
-        })
-        await db.commit()
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(400, "Erro ao criar conta. Telefone ou email já usados.")
-
-    return {"message": "Conta criada! Faça login."}

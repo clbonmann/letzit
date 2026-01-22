@@ -43,10 +43,10 @@ class CompleteRegistrationRequest(BaseModel):
 
 class ClientLoginRequest(BaseModel):
     phone: str
-    lat: float
-    lon: float
-    fcm_token: Optional[str] = None
     password: str
+    lat: float = 0.0         
+    lon: float = 0.0
+    fcm_token: str | None = None
 
 class LoginRequest(BaseModel):
     phone: str
