@@ -1,6 +1,6 @@
 from typing import Optional
 from datetime import date, datetime
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from geopy.geocoders import Nominatim
 
 # Inicializa o geolocator (Defina um user_agent único)
@@ -100,3 +100,8 @@ class ReviewCreateRequest(BaseModel):
     rating_drink: int
     rating_environment: int
     comment: Optional[str] = None
+
+class PicksRequest(BaseModel):
+    lat: Optional[float] = Field(None, description="Latitude do cliente")
+    lon: Optional[float] = Field(None, description="Longitude do cliente")
+    city_slug: Optional[str] = Field(None, description="Slug da cidade para filtro")

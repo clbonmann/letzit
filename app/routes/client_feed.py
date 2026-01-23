@@ -1,6 +1,6 @@
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Annotated
 from uuid import uuid4
 from fastapi import APIRouter, Depends, Query, HTTPException, BackgroundTasks
 from sqlalchemy import text
@@ -8,9 +8,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db_session, AsyncSessionLocal
 from app.deps_client import get_current_client_id
 # IMPORTANDO SCHEMAS
-from app.schemas.client import AcceptOfferResponse
+from app.schemas.client import AcceptOfferResponse, PicksRequest
 
 router = APIRouter(prefix="/client/offers", tags=["client-feed"])
+
+# Função auxiliar para marcar visualização sem travar o request principal
+async def mark_offers_as_viewed(uid: int, offer_ids: list, db_session_factory):
+    if not offer_ids:
+        return
+    async with db_session_factory() as db:
+        await db.execute(
+            text("""
+                UPDATE offer_targets 
+                SET viewed_at = NOW() 
+                WHERE client_id = :uid 
+                  AND offer_id = ANY(:oids) 
+                  AND viewed_at IS NULL
+            """),
+            {"uid": uid, "oids": offer_ids}
+        )
+        await db.commit()
 
 async def log_analytics_task(offer_id: int, client_id: int, event: str):
     async with AsyncSessionLocal() as session:
@@ -68,66 +85,59 @@ async def get_restaurants_list(
 
 @router.get("/picks")
 async def get_picks(
-    lat: Optional[float] = Query(None),
-    lon: Optional[float] = Query(None),
-    city_slug: Optional[str] = Query(None),
+    params: Annotated[PicksRequest, Depends()], # Agrupa lat, lon e city_slug
+    bg: BackgroundTasks,
     uid: int = Depends(get_current_client_id), 
     db: AsyncSession = Depends(get_db_session),
 ):
-    # 1. Auto-detecção de cidade
-    if not city_slug and lat and lon:
-        res = (await db.execute(
-            text("SELECT city_slug FROM restaurants WHERE ST_DWithin(geog, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 20000) ORDER BY geog <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326) LIMIT 1"),
-            {"lat": lat, "lon": lon}
-        )).mappings().first()
-        if res and res.city_slug: city_slug = res.city_slug
+    # Agora você acessa via params.lat, params.lon, etc.
+    lat = params.lat
+    lon = params.lon
+    city_slug = params.city_slug
 
-    # 2. Estratégia CITY_HOME
-    if city_slug:
-        city_norm = city_slug.strip().lower().replace(" ", "_").replace("-", "_")
-        rows = (await db.execute(
-            text("""
-                SELECT o.id, o.restaurant_id, r.name AS restaurant_name, r.logo_url, o.title, o.message, o.price_cents, o.original_price_cents, o.end_at, 0 as distance_m, 'CITY_HOME' as placement
-                FROM offers o JOIN restaurants r ON r.id = o.restaurant_id
-                WHERE o.placement = 'CITY_HOME' AND o.status = 'ACTIVE' AND o.end_at > NOW() AND (r.city_slug = :city OR LOWER(r.city) = :city_sp) AND o.accepted_count < o.accept_limit
-                ORDER BY o.created_at DESC LIMIT 5
-            """), {"city": city_norm, "city_sp": city_norm.replace("_", " ")}
-        )).mappings().all()
-        if rows:
-            return {"strategy": "CITY_HOME", "title": f"Destaques em {city_slug.replace('_', ' ').title()}", "items": rows}
+    # Ponto geográfico de referência (usado para ordenar a lista final)
+    # Se lat/lon não vierem, usamos a última localização do cliente no banco
+    ref_point = f"ST_SetSRID(ST_MakePoint({lon}, {lat}), 4326)" if lat and lon else "c.geog"
 
-    # 3. Estratégia PROXIMITY
-    rows = (await db.execute(
-        text("""
-            SELECT o.id, o.restaurant_id, r.name AS restaurant_name, r.logo_url, o.title, o.message, o.end_at, ST_Distance(r.geog, (SELECT geog FROM clients WHERE id=:uid))::int as distance_m, 'NORMAL' as placement
-            FROM offer_targets t JOIN offers o ON o.id = t.offer_id JOIN restaurants r ON r.id = o.restaurant_id
-            WHERE t.client_id = :uid AND t.used_at IS NULL AND o.status = 'ACTIVE' AND o.end_at > NOW()
-            ORDER BY t.created_at DESC LIMIT 5
-        """), {"uid": uid}
-    )).mappings().all()
-
-    # Cold Start
-    if not rows and lat and lon:
-        try:
-            rows = (await db.execute(
-                text("""
-                    WITH new_matches AS (
-                        INSERT INTO offer_targets (client_id, offer_id, released_at)
-                        SELECT :uid, o.id, NOW() FROM offers o JOIN restaurants r ON r.id = o.restaurant_id
-                        WHERE o.status = 'ACTIVE' AND o.end_at > NOW() AND o.placement = 'NORMAL' AND ST_DWithin(r.geog, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 15000)
-                        ORDER BY ST_Distance(r.geog, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)) ASC LIMIT 5
-                        ON CONFLICT DO NOTHING RETURNING offer_id
-                    )
-                    SELECT o.id, o.restaurant_id, r.name AS restaurant_name, r.logo_url, o.title, o.message, o.price_cents, o.original_price_cents, o.end_at, ST_Distance(r.geog, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))::int as distance_m, 'NORMAL' as placement
-                    FROM new_matches nm JOIN offers o ON o.id = nm.offer_id JOIN restaurants r ON r.id = o.restaurant_id
-                """), {"uid": uid, "lat": lat, "lon": lon}
-            )).mappings().all()
-            await db.commit()
-        except Exception:
-            await db.rollback()
-            rows = []
-
-    return {"strategy": "PROXIMITY", "title": "Próximos a Você", "items": rows}
+    # 1. Busca ofertas já selecionadas pelo Matchmaker para este cliente
+    # Esta é a query principal: rápida e indexada pela tabela offer_targets
+    query_targets = text(f"""
+        SELECT 
+            o.id, 
+            o.restaurant_id, 
+            r.name AS restaurant_name, 
+            r.logo_url, 
+            o.title, 
+            o.message, 
+            o.price_cents,
+            o.original_price_cents,
+            o.end_at, 
+            ST_Distance(r.geog, {ref_point})::int as distance_m, 
+            o.placement
+        FROM offer_targets t 
+        JOIN offers o ON o.id = t.offer_id 
+        JOIN restaurants r ON r.id = o.restaurant_id
+        JOIN clients c ON c.id = t.client_id
+        WHERE t.client_id = :uid 
+          AND t.accepted_at IS NULL 
+          AND o.status = 'ACTIVE' 
+          AND o.end_at > NOW()
+          AND (o.accept_limit - o.accepted_count) > 0
+        ORDER BY t.created_at DESC 
+        LIMIT 10
+    """)
+    
+    rows = (await db.execute(query_targets, {"uid": uid})).mappings().all()
+# 2. Se encontrou ofertas, agenda a marcação de visualização
+    if rows:
+        offer_ids = [row['id'] for row in rows]
+        # Usamos background_tasks para o update não "pesar" no tempo de resposta do app
+        bg.add_task(mark_offers_as_viewed, uid, offer_ids, lambda: db)
+    return {
+        "strategy": "TARGETED" if rows else "EMPTY",
+        "title": "Sugestões para Você",
+        "items": rows
+    }
 
 @router.get("/map-source")
 async def get_offers_map_source(db: AsyncSession = Depends(get_db_session)):
