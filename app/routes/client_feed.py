@@ -1,6 +1,6 @@
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Annotated, List, Literal, Dict
+from typing import Optional, Annotated, List, Literal, Dict, Union, Any
 from uuid import uuid4
 from fastapi import APIRouter, Depends, Query, HTTPException, BackgroundTasks
 from sqlalchemy import text, or_, and_, select
@@ -351,44 +351,34 @@ async def register_offer_click(
     return {"status": "recorded"}
 
 
-@router.get("/{restaurant_id}/features", response_model=MobileFeaturesResponse)
-async def get_restaurant_features(
-    restaurant_id: int,
-    db: AsyncSession = Depends(get_db_session),
-):
-    # 1. QUERY AJUSTADA:
-    # Em vez de pegar 'fg.code' e 'feature_id', pegamos o 'f.slug'
-    # O 'slug' é o identificador textual (ex: 'wifi', 'kids', 'ac')
-    query = text("""
-        SELECT f.slug
-        FROM restaurant_features rf
-        JOIN features f ON f.id = rf.feature_id
-        WHERE rf.restaurant_id = :rid
-          AND f.is_active = true 
-    """)
-    
-    # Executa e pega apenas os valores escalares (lista de strings)
-    result = await db.execute(query, {"rid": restaurant_id})
-    rows = result.scalars().all() # Ex: ['wifi', 'parking', 'kids']
-
-    # 2. TRANSFORMAÇÃO PARA O APP:
-    # Converte a lista ['wifi'] em um dicionário {'wifi': True}
-    features_map = {slug: True for slug in rows}
-
-    # 3. RETORNO:
-    # Envolvemos na chave "features" para bater com o frontend: response.data.features
-    return {"features": features_map}
-
-# Adicione este endpoint no seu app/routes/client_feed.py ou arquivo equivalente
-
 @router.get("/features")
-async def get_available_features(
-    db: AsyncSession = Depends(get_db_session)
-):
-    """
-    Retorna a lista de features ativas para montar os filtros no App.
-    """
-    query = text("SELECT slug, name FROM features WHERE is_active = true ORDER BY name")
-    result = await db.execute(query)
-    # Retorna lista de dicionários: [{'slug': 'wifi', 'name': 'Wi-Fi'}, ...]
-    return result.mappings().all()
+async def get_features_unified(
+    # Tornamos o restaurant_id opcional e via Query Param (?restaurant_id=1)
+    restaurant_id: Optional[int] = Query(None, description="ID do restaurante para filtrar features ativas"),
+    db: AsyncSession = Depends(get_db_session),
+) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
+    
+    # --- CENÁRIO A: Tem ID -> Retorna o Mapa de Features do Restaurante ---
+    if restaurant_id:
+        query = text("""
+            SELECT f.slug
+            FROM restaurant_features rf
+            JOIN features f ON f.id = rf.feature_id
+            WHERE rf.restaurant_id = :rid
+              AND f.is_active = true 
+        """)
+        
+        result = await db.execute(query, {"rid": restaurant_id})
+        rows = result.scalars().all()
+
+        # Retorna formato para checagem rápida: {"features": {"wifi": true}}
+        features_map = {slug: True for slug in rows}
+        return {"features": features_map}
+
+    # --- CENÁRIO B: Sem ID -> Retorna Lista Completa para Filtros ---
+    else:
+        query = text("SELECT slug, name FROM features WHERE is_active = true ORDER BY name")
+        result = await db.execute(query)
+        
+        # Retorna lista para renderizar UI: [{'slug': 'wifi', 'name': 'Wi-Fi'}]
+        return result.mappings().all()
