@@ -129,7 +129,7 @@ async def get_picks(
         LIMIT 10
     """)
     
-    rows = (await db.execute(query_targets, {"uid": uid})).mappings().all()
+    rows = (await db.execute(query_targets, {"uid": uid, "placement": placement })).mappings().all()
 # 2. Se encontrou ofertas, agenda a marcação de visualização
     if rows:
         offer_ids = [row['id'] for row in rows]
