@@ -50,7 +50,7 @@ async def consume_qrcode(offer_id: int, payload: RedeemRequest, bg: BackgroundTa
         bg.add_task(log_analytics_task, offer_id, upd.client_id, "REDEEM")
         return RedeemResponse(status=RedeemStatus.REDEEMED, offer_id=offer_id, claim_id=upd.id, client_id=upd.client_id, redeemed_at=upd.redeemed_at)
     
-    await db.execute(text("UPDATE offer_targets SET accepted_at = NOW() WHERE client_id = :uid AND offer_id = :oid AND accepted_at IS NULL"),{"uid": upd.client_id, "oid": offer_id})
+    await db.execute(text("UPDATE offer_targets SET redeemed_at = NOW() WHERE client_id = :uid AND offer_id = :oid AND redeemed_at IS NULL"),{"uid": upd.client_id, "oid": offer_id})
     await db.rollback()
     return await verify_qrcode(offer_id, payload, db, staff)
 
