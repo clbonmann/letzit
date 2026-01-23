@@ -9,7 +9,7 @@ celery_app = Celery(
     "letzit_worker",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["app.tasks.matchmaker", "app.tasks.restaurant_reputation"]
+    include=["app.tasks.matchmaker", "app.tasks.restaurant_reputation","app.tasks.expired_offers"]
 )
 
 celery_app.conf.update(
@@ -29,6 +29,11 @@ celery_app.conf.beat_schedule = {
 
     'update-reputation-every-30-minutes': {
         'task': 'app.tasks.restaurant_reputation.update_restaurant_reputation_task',
+        'schedule': crontab(minute='*/30'), # Roda a cada 30 minutos
+    },
+
+    'update-expired-offers-60-minutes': {
+        'task': 'app.tasks.expired_offers.update_expired_offers_task',
         'schedule': crontab(minute='*/30'), # Roda a cada 30 minutos
     },
 }
