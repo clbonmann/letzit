@@ -113,10 +113,33 @@ class RestaurantsRequest(BaseModel):
     page: Optional[int] = Field(1, description= "Número da página")
     limit: Optional[int] = Field(10, description= "Número de restaurantes por página")
 
-class RestaurantFeaturesResponse(BaseModel):
+class RestaurantDetailsResponse(BaseModel):
     restaurant_id: int
     # Retorna o que o restaurante tem salvo, agrupado por código
     selections: Dict[str, List[int]]
 
 class MobileFeaturesResponse(BaseModel):
     features: Dict[str, bool]
+
+class RestaurantDetailsResponse(BaseModel):
+    id: int
+    name: str
+    logo_url: Optional[str] = None
+    cover_image_url: Optional[str] = None
+    
+    # O frontend espera 'address', mas no banco pode ser 'address_street'
+    # Você pode mapear isso na query ou aqui
+    address: Optional[str] = None 
+    
+    reputation: Optional[float] = None
+    is_open: bool = False
+    
+    # Importante ser opcional, pois na busca por texto puro 
+    # as vezes não calculamos a distância se não tiver lat/long do user
+    distance_meters: Optional[float] = None 
+    
+    # O mapa de features: {"wifi": true, "parking": true}
+    features: Dict[str, bool] = {}
+
+    class Config:
+        from_attributes = True

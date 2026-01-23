@@ -3,14 +3,21 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Annotated, List, Literal, Dict
 from uuid import uuid4
 from fastapi import APIRouter, Depends, Query, HTTPException, BackgroundTasks
-from sqlalchemy import text
+from sqlalchemy import text, or_, and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from app.db import get_db_session, AsyncSessionLocal
 from app.deps_client import get_current_client_id
+from app.models import Restaurant
+
 # IMPORTANDO SCHEMAS
-from app.schemas.client import AcceptOfferResponse, PicksRequest, RestaurantsRequest, RestaurantFeaturesResponse, MobileFeaturesResponse
+from app.schemas.client import (
+    AcceptOfferResponse, 
+    PicksRequest, 
+    RestaurantsRequest, 
+    MobileFeaturesResponse, 
+    RestaurantDetailsResponse)
 
 router = APIRouter(prefix="/client/offers", tags=["client-feed"])
 
@@ -331,3 +338,48 @@ async def get_restaurant_features(
     # 3. RETORNO:
     # Envolvemos na chave "features" para bater com o frontend: response.data.features
     return {"features": features_map}
+from fastapi import Query
+from sqlalchemy import or_, and_
+
+@router.get("/restaurants/search", response_model=List[RestaurantDetailsResponse])
+async def search_restaurants(
+    q: Optional[str] = None,
+    features: Optional[List[str]] = Query(None), # Recebe ?features=wifi&features=parking
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Filtra restaurantes por Texto (Nome/Descrição) E Features (JSONB).
+    """
+    stmt = select(Restaurant).where(Restaurant.is_active == True)
+
+    # 1. Filtro de Texto (Nome ou Descrição) - ILIKE para ignorar maiúsculas
+    if q:
+        search_term = f"%{q}%"
+        stmt = stmt.where(
+            or_(
+                Restaurant.name.ilike(search_term),
+                Restaurant.description.ilike(search_term)
+            )
+        )
+
+    # 2. Filtro de Features (JSONB)
+    # O operador contains (@>) do Postgres verifica se o JSON contém o sub-JSON
+    if features:
+        # Monta um dicionário {"wifi": true, "parking": true}
+        required_features = {f: True for f in features}
+        stmt = stmt.where(Restaurant.features.contains(required_features))
+
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+
+    # Mapeia para o schema de resposta (reuse o schema que já criamos antes)
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "logo_url": r.logo_url,
+            "address": r.address_street, # Ajuste conforme seu model
+            "features": r.features or {}
+        }
+        for r in rows
+    ]

@@ -22,7 +22,8 @@ from app.schemas.staff import (
     RestaurantFeaturesUpdateRequest, 
     RestaurantFeaturesUpdateResponse, 
     TaxGroup,
-    TaxItem, RestaurantStatusUpdate
+    TaxItem, 
+    RestaurantStatusUpdate
 )
 from app.models import Restaurant, RestaurantStaff as Staff
 
