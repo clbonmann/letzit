@@ -67,7 +67,8 @@ class RestaurantRead(BaseModel):
     id: int
     name: str
     cnpj: str | None = None
-    city: str | None = None
+    logo_url: Optional[str] = None
+    reputation: Optional[float]
     address_street: str | None = None
     address_number: str | None = None
     address_district: str | None = None
@@ -75,14 +76,15 @@ class RestaurantRead(BaseModel):
     address_state: str | None = None
     address_zip: str | None = None
     address_country: str | None = None
-    logo_url: Optional[str] = None
-    lat: Optional[float] = None
-    long: Optional[float] = None
+    decription: Optional[str] = None
     phone: Optional[str] = None
-    description: Optional[str] = None
+
     is_open: Optional[bool] = None
     working_hours: Optional[float] = None
 
+ 
+    lat: Optional[float] = None
+    long: Optional[float] = None
     class Config:
         from_attributes = True
 
