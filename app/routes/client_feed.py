@@ -5,10 +5,12 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Query, HTTPException, BackgroundTasks
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
+
 from app.db import get_db_session, AsyncSessionLocal
 from app.deps_client import get_current_client_id
 # IMPORTANDO SCHEMAS
-from app.schemas.client import AcceptOfferResponse, PicksRequest, RestaurantsRequest, RestaurantFeaturesResponse
+from app.schemas.client import AcceptOfferResponse, PicksRequest, RestaurantsRequest, RestaurantFeaturesResponse, MobileFeaturesResponse
 
 router = APIRouter(prefix="/client/offers", tags=["client-feed"])
 
@@ -301,26 +303,31 @@ async def register_offer_click(
     await db.commit()
     return {"status": "recorded"}
 
-@router.get("/{restaurant_id}/features", response_model=RestaurantFeaturesResponse)
+
+@router.get("/{restaurant_id}/features", response_model=MobileFeaturesResponse)
 async def get_restaurant_features(
     restaurant_id: int,
     db: AsyncSession = Depends(get_db_session),
-)-> RestaurantFeaturesResponse:
-    # Fetch existing selections joined with group codes
-    rows = (await db.execute(text("""
-        SELECT fg.code, rf.feature_id
+):
+    # 1. QUERY AJUSTADA:
+    # Em vez de pegar 'fg.code' e 'feature_id', pegamos o 'f.slug'
+    # O 'slug' é o identificador textual (ex: 'wifi', 'kids', 'ac')
+    query = text("""
+        SELECT f.slug
         FROM restaurant_features rf
         JOIN features f ON f.id = rf.feature_id
-        JOIN feature_groups fg ON fg.id = f.group_id
         WHERE rf.restaurant_id = :rid
-        ORDER BY fg.code, rf.feature_id
-    """), {"rid": restaurant_id})).mappings().all()
+          AND f.is_active = true 
+    """)
+    
+    # Executa e pega apenas os valores escalares (lista de strings)
+    result = await db.execute(query, {"rid": restaurant_id})
+    rows = result.scalars().all() # Ex: ['wifi', 'parking', 'kids']
 
-    # Organize by group code dynamically
-    selections: Dict[str, List[int]] = {}
-    for r in rows:
-        code = str(r["code"])
-        fid = int(r["feature_id"])
-        selections.setdefault(code, []).append(fid)
+    # 2. TRANSFORMAÇÃO PARA O APP:
+    # Converte a lista ['wifi'] em um dicionário {'wifi': True}
+    features_map = {slug: True for slug in rows}
 
-    return RestaurantFeaturesResponse(restaurant_id=restaurant_id, selections=selections)
+    # 3. RETORNO:
+    # Envolvemos na chave "features" para bater com o frontend: response.data.features
+    return {"features": features_map}

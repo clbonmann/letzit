@@ -117,3 +117,6 @@ class RestaurantFeaturesResponse(BaseModel):
     restaurant_id: int
     # Retorna o que o restaurante tem salvo, agrupado por código
     selections: Dict[str, List[int]]
+
+class MobileFeaturesResponse(BaseModel):
+    features: Dict[str, bool]
