@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from datetime import datetime, timezone
 from typing import List, Literal, Dict, Optional, Set
 
@@ -212,6 +211,66 @@ async def upload_restaurant_logo(
 
     return {"status": "success", "logo_url": url}
 
+@router.post("/cover")
+async def upload_restaurant_cover(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db_session),
+    staff: dict = Depends(get_current_staff)
+):
+    """Upload Logo to Cloudinary + DB Update."""
+    restaurant_id = int(staff["restaurant_id"])
+
+    try:
+        transformations = {
+            "width": 600, 
+            "height": 400, 
+            "crop": "pad",
+            "background": "white",
+            "gravity": "center",
+            "quality": "auto",
+            "fetch_format": "auto"
+        }
+
+        url = upload_image(
+            file, 
+            folder=f"restaurants/{restaurant_id}/cover",
+            transformation=transformations 
+        )
+        
+    except Exception as e:
+        print(f"Upload Error: {e}")
+        raise HTTPException(500, "Falha no upload da imagem.")
+    
+    query_select = text("SELECT cover_image_url FROM restaurants WHERE id = :rid")
+    current_res = await db.execute(query_select, {"rid": restaurant_id})
+    current_cover_str = current_res.scalar() # Retorna a string ou None
+
+        # B. Transforma em lista
+    cover_list = []
+    if current_cover_str:
+        # Separa por ; e remove strings vazias caso existam
+        cover_list = [c for c in current_cover_str.split(";") if c.strip()]
+
+    # C. Verifica limite de 5
+    if len(cover_list) >= 5:
+        raise HTTPException(status_code=400, detail="Limite máximo de 5 fotos de capa atingido. Remova uma antes de adicionar.")
+
+    # D. Adiciona a nova URL à lista
+    cover_list.append(url)
+
+    # E. Junta tudo novamente com ponto e vírgula
+    new_cover_str = ";".join(cover_list)
+
+        # F. Atualiza no Banco
+        # Nota: Removi 'logo_updated_at' pois estamos mexendo na capa, não na logo.
+    await db.execute(
+            text("UPDATE restaurants SET cover_image_url = :url WHERE id = :rid"),
+            {"url": new_cover_str, "rid": restaurant_id}
+        )
+
+    await db.commit()
+
+    return {"status": "success", "cover_image_url": new_cover_str}
 
 # ---------------------------
 # REFACTORED FEATURES LOGIC
