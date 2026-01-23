@@ -94,6 +94,7 @@ async def get_picks(
     lat = params.lat
     lon = params.lon
     city_slug = params.city_slug
+    placement = params.placement
 
     # Ponto geográfico de referência (usado para ordenar a lista final)
     # Se lat/lon não vierem, usamos a última localização do cliente no banco
@@ -119,6 +120,7 @@ async def get_picks(
         JOIN restaurants r ON r.id = o.restaurant_id
         JOIN clients c ON c.id = t.client_id
         WHERE t.client_id = :uid 
+          AND o.placement = :placement
           AND t.accepted_at IS NULL 
           AND o.status = 'ACTIVE' 
           AND o.end_at > NOW()
@@ -138,6 +140,7 @@ async def get_picks(
         "title": "Sugestões para Você",
         "items": rows
     }
+
 
 @router.get("/map-source")
 async def get_offers_map_source(db: AsyncSession = Depends(get_db_session)):
@@ -219,3 +222,25 @@ async def get_my_claims(
     
     rows = (await db.execute(query, {"uid": uid})).mappings().all()
     return rows
+
+@router.post("/{offer_id}/click")
+async def register_offer_click(
+    offer_id: int,
+    uid: int = Depends(get_current_client_id),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Registra que o usuário clicou para ver os detalhes de uma oferta específica.
+    """
+    await db.execute(
+        text("""
+            UPDATE offer_targets 
+            SET clicked_at = NOW() 
+            WHERE client_id = :uid 
+              AND offer_id = :oid 
+              AND clicked_at IS NULL
+        """),
+        {"uid": uid, "oid": offer_id}
+    )
+    await db.commit()
+    return {"status": "recorded"}

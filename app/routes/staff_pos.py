@@ -51,6 +51,18 @@ async def consume_qrcode(offer_id: int, payload: RedeemRequest, bg: BackgroundTa
         return RedeemResponse(status=RedeemStatus.REDEEMED, offer_id=offer_id, claim_id=upd.id, client_id=upd.client_id, redeemed_at=upd.redeemed_at)
     
     await db.rollback()
+
+    await db.execute(
+        text("""
+            UPDATE offer_targets 
+            SET redeemed_at = NOW() 
+            WHERE client_id = :uid 
+              AND offer_id = :oid 
+              AND clicked_at IS NULL
+        """),
+        {"uid": upd.client_id, "oid": offer_id}
+    )
+    await db.commit()
     return await verify_qrcode(offer_id, payload, db, staff)
 
 @router.post("/{offer_id}/debug/force-accept")

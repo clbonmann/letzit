@@ -193,7 +193,7 @@ async def create_offer(
         raise HTTPException(400, "Restaurante sem localização cadastrada.")
 
     # --- 3. Calcular Audiência ---
-    radius_meters = (payload.radius_km or 20) * 1000
+    radius_meters = (payload.radius_km or 25) * 1000
     stmt_count = select(func.count(Client.id)).where(
         ST_DWithin(Client.geog, restaurant_geog, radius_meters)
     )

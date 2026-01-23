@@ -244,6 +244,7 @@ class OfferTarget(Base):
     accepted_at = Column(DateTime(timezone=True), nullable=True)
     redeemed_at = Column(DateTime(timezone=True), nullable=True)
     viewed_at = Column(DateTime(timezone=True), nullable=True)
+    clicked_at = Column(DateTime(timezone=True), nullable=True)
     cli_geog = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     res_geog = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     target_distance = Column(Integer, nullable=True)

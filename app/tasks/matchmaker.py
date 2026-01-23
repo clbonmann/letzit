@@ -60,6 +60,9 @@ async def _execute_matchmaking_logic():
             count_query = text("SELECT count(*) FROM offer_targets WHERE offer_id = :oid")
             current_targets = (await db.execute(count_query, {"oid": offer.id})).scalar()
 
+            #SE A OFERTA MANDAR NULL É PLACEMENT HOME_CITY
+            radius_meters = (offer.radius_km or 25) * 1000 #km para metros
+
             limit_val = 500 # Default de segurança
 
             # Se tem limite total de alvos definido
@@ -107,7 +110,7 @@ async def _execute_matchmaking_logic():
                     "oid": offer.id,
                     "created_at": offer.created_at,
                     "geog": offer.geog,
-                    "radius_meters": offer.radius_km * 1000, # Conversão KM -> Metros
+                    "radius_meters": radius_meters, 
                     "limit": limit_val
                 })
                 
