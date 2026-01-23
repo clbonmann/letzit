@@ -9,10 +9,11 @@ celery_app = Celery(
     "letzit_worker",
     broker=REDIS_URL,
     backend=REDIS_URL,
-   include=[
+    include=[
         "app.tasks.matchmaker", 
         "app.tasks.restaurant_reputation",
-        "app.tasks.expired_offers" 
+        "app.tasks.expired_offers",
+        "app.tasks.client_scoring" # <--- Adicionado: Nível/Reputação do Cliente
     ]
 )
 
@@ -26,18 +27,28 @@ celery_app.conf.update(
 )
 
 celery_app.conf.beat_schedule = {
+    # 1. MATCHMAKER: O coração do app (Roda todo minuto)
     "run-matchmaker-every-minute": {
         "task": "app.tasks.matchmaker.run_matchmaker_cycle",
         "schedule": crontab(minute="*"),
     },
 
-    'update-reputation-every-30-minutes': {
+    # 2. REPUTAÇÃO DO RESTAURANTE (Roda a cada 30 min)
+    'update-restaurant-reputation-30-min': {
         'task': 'app.tasks.restaurant_reputation.update_restaurant_reputation_task',
-        'schedule': crontab(minute='*/30'), # Roda a cada 30 minutos
+        'schedule': crontab(minute='*/30'),
     },
 
-    'update-expired-offers-60-minutes': {
+    # 3. EXPIRAÇÃO DE OFERTAS (Roda a cada 30 min)
+    'update-expired-offers-30-min': {
         'task': 'app.tasks.expired_offers.update_expired_offers_task',
-        'schedule': crontab(minute='*/30'), # Roda a cada 30 minutos
+        'schedule': crontab(minute='*/30'), 
+    },
+
+    # 4. NÍVEL E REPUTAÇÃO DO CLIENTE (Roda 1x por hora)
+    # Importante para bloquear usuários com No-Show e subir o nível de quem usa
+    'update-client-scores-hourly': {
+        'task': 'app.tasks.client_scoring.update_client_scores_task',
+        'schedule': crontab(minute='0'), # No minuto 0 de cada hora
     },
 }

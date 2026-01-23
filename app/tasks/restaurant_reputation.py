@@ -1,49 +1,43 @@
-from sqlalchemy import text
-from app.db import AsyncSessionLocal # Use sua conexão de banco aqui
-import asyncio
 import os
+import asyncio
 import logging
 from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
-from app.models import Offer
-from app.core import celery_app
+from celery import shared_task # <--- CORREÇÃO CRÍTICA: Use shared_task
 
 logger = logging.getLogger(__name__)
+
 # -------------------------------------------
-# 1. PREPARAÇÃO DA URL (CORREÇÃO DO ERRO)
+# 1. PREPARAÇÃO DA URL
 # -------------------------------------------
 raw_url = os.getenv("DATABASE_URL")
-
 if not raw_url:
     raise ValueError("DATABASE_URL não configurada no ambiente")
 
-# O Railway fornece 'postgres://', mas o SQLAlchemy Async precisa de 'postgresql+asyncpg://'
 if raw_url.startswith("postgres://"):
     DATABASE_URL = raw_url.replace("postgres://", "postgresql+asyncpg://", 1)
 elif raw_url.startswith("postgresql://") and "+asyncpg" not in raw_url:
-    # Caso venha postgresql:// mas sem o driver async
     DATABASE_URL = raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 else:
     DATABASE_URL = raw_url
 
 async def _update_restaurant_reputation_logic():
-    
+    # Cria engine dedicada para a task (evita stale connections)
     engine = create_async_engine(DATABASE_URL, poolclass=NullPool)
-    AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+    LocalSession = async_sessionmaker(engine, expire_on_commit=False)
    
-    async with AsyncSessionLocal() as db:
+    async with LocalSession() as db:
+        logger.info(f"Iniciando cálculo de reputação de restaurantes: {datetime.now()}")
 
-        print(f"Executando média reviews restaurantes: {datetime.now()}")
-
-    #Recalcula a média de avaliações de todos os restaurantes
-    #e atualiza a coluna 'reputation' na tabela 'restaurants'.
         try:
-            # Query atômica para recalcular e atualizar
+            # Query otimizada:
+            # 1. Usa restaurant_reputation (nome correto da coluna)
+            # 2. Usa IS DISTINCT FROM para só atualizar se a nota mudou
             sql = text("""
                 UPDATE restaurants r
-                SET reputation = sub.avg_total
+                SET restaurant_reputation = sub.avg_total
                 FROM (
                     SELECT 
                         restaurant_id, 
@@ -51,24 +45,30 @@ async def _update_restaurant_reputation_logic():
                     FROM restaurant_reviews
                     GROUP BY restaurant_id
                 ) AS sub
-                WHERE r.id = sub.restaurant_id;
+                WHERE r.id = sub.restaurant_id
+                  AND (r.restaurant_reputation IS DISTINCT FROM sub.avg_total);
             """)
-            print("Reputação dos restaurantes atualizada com sucesso.")
+            
+            # CORREÇÃO: Executa DENTRO do try
+            result = await db.execute(sql)
+            await db.commit()
+            
+            logger.info(f"Sucesso: Reputação atualizada para {result.rowcount} restaurantes.")
+
         except Exception as e:
             await db.rollback()
-            print(f"Erro ao atualizar reputação: {e}")
-
-        await db.execute(sql)
-        await db.commit()        
-        print("Reviews atualizadas com sucesso.")   
-        await engine.dispose()
+            logger.error(f"Erro ao atualizar reputação: {e}")
+            raise e # Relança para o Celery saber que falhou
+        finally:
+            await engine.dispose()
     
-    return f"Ciclo finalizado."
+    return "Ciclo finalizado."
 
 # ---------------------------------------------------------
-# 3. A TAREFA DO CELERY (SYNC WRAPPER)
+# 3. A TAREFA DO CELERY
 # ---------------------------------------------------------
-@celery_app.task(name="app.tasks.restaurant_reputation.update_restaurant_reputation_task")
+# CORREÇÃO: Nome deve bater com o beat_schedule e usar shared_task
+@shared_task(name="app.tasks.restaurant_reputation.update_restaurant_reputation_task")
 def update_restaurant_reputation_task():
     """Wrapper síncrono para o Celery"""
     return asyncio.run(_update_restaurant_reputation_logic())
