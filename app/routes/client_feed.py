@@ -166,34 +166,100 @@ async def get_offer_details(offer_id: int, uid: int = Depends(get_current_client
     return row
 
 @router.post("/{offer_id}/accept", response_model=AcceptOfferResponse)
-async def accept_offer(offer_id: int, bg: BackgroundTasks, db: AsyncSession = Depends(get_db_session), uid: int = Depends(get_current_client_id)):
+async def accept_offer(
+    offer_id: int, 
+    bg: BackgroundTasks, 
+    db: AsyncSession = Depends(get_db_session), 
+    uid: int = Depends(get_current_client_id)
+):
     now = datetime.now(timezone.utc)
-    # Checks
-    u = (await db.execute(text("SELECT is_blocked, cooldown_until FROM clients WHERE id=:uid"), {"uid": uid})).mappings().first()
-    if not u: return AcceptOfferResponse(status="client_NOT_ELIGIBLE", offer_id=offer_id)
-    if u.is_blocked: return AcceptOfferResponse(status="BLOCKED", offer_id=offer_id)
-    if u.cooldown_until and u.cooldown_until > now: return AcceptOfferResponse(status="COOLDOWN", offer_id=offer_id)
-    
-    # Offer Lock
-    o = (await db.execute(text("SELECT id, status, end_at, accept_limit, accepted_count, accept_ttl_hours FROM offers WHERE id=:oid FOR UPDATE"), {"oid": offer_id})).mappings().first()
-    if not o or o.status != "ACTIVE" or o.end_at <= now: return AcceptOfferResponse(status="CLOSED", offer_id=offer_id)
-    if o.accepted_count >= o.accept_limit: return AcceptOfferResponse(status="SOLD_OUT", offer_id=offer_id, accepted_count=o.accepted_count, accept_limit=o.accept_limit)
-    
-    # Existing
-    ex = (await db.execute(text("SELECT status, expires_at, qr_token FROM offer_claims WHERE offer_id=:oid AND client_id=:uid"), {"oid": offer_id, "uid": uid})).mappings().first()
-    if ex: return AcceptOfferResponse(status="ACCEPTED" if ex.status=="ACCEPTED" else "CLOSED", offer_id=offer_id, expires_at=ex.expires_at, qr_token=ex.qr_token, accepted_count=o.accepted_count, accept_limit=o.accept_limit)
 
-    # Claim
+    # 1. Verifica se o usuário foi "pescado" (Targeted) e se já tem um Claim
+    # Isso substitui os checks de bloqueio/cooldown que o Matchmaker já fez.
+    check_query = text("""
+        SELECT 
+            t.offer_id, 
+            c.status as claim_status, 
+            c.expires_at, 
+            c.qr_token 
+        FROM offer_targets t
+        LEFT JOIN offer_claims c ON c.offer_id = t.offer_id AND c.client_id = t.client_id
+        WHERE t.offer_id = :oid AND t.client_id = :uid
+    """)
+    
+    check = (await db.execute(check_query, {"oid": offer_id, "uid": uid})).mappings().first()
+    
+    # Se não existe na offer_targets, o usuário não tem direito a esta oferta (segurança)
+    if not check:
+        return AcceptOfferResponse(status="NOT_ELIGIBLE", offer_id=offer_id)
+    
+    # Se já aceitou anteriormente, retorna o ticket existente (Idempotência)
+    if check.claim_status:
+        return AcceptOfferResponse(
+            status="ACCEPTED" if check.claim_status == "ACCEPTED" else "CLOSED",
+            offer_id=offer_id,
+            expires_at=check.expires_at,
+            qr_token=check.qr_token
+        )
+
+    # 2. Bloqueio de Oferta e Checagem de Estoque/Status
+    # Usamos FOR UPDATE para evitar que dois usuários peguem a última vaga ao mesmo tempo
+    o = (await db.execute(
+        text("SELECT id, status, end_at, accept_limit, accepted_count, accept_ttl_hours FROM offers WHERE id=:oid FOR UPDATE"),
+        {"oid": offer_id}
+    )).mappings().first()
+
+    if not o or o.status != "ACTIVE" or o.end_at <= now:
+        return AcceptOfferResponse(status="CLOSED", offer_id=offer_id)
+    
+    if o.accepted_count >= o.accept_limit:
+        return AcceptOfferResponse(status="SOLD_OUT", offer_id=offer_id)
+
+    # 3. Processamento do Resgate (Claim)
     ttl = o.accept_ttl_hours or 6
     exp = min(o.end_at, now + timedelta(hours=ttl))
     qr = str(uuid4())
-    await db.execute(text("INSERT INTO offer_claims (offer_id, client_id, status, accepted_at, expires_at, qr_token) VALUES (:oid, :uid, 'ACCEPTED', :now, :exp, :qr)"), {"oid": offer_id, "uid": uid, "now": now, "exp": exp, "qr": qr})
-    await db.execute(text("UPDATE offers SET accepted_count = accepted_count + 1 WHERE id = :oid"), {"oid": offer_id})
-    await db.commit()
-    
-    bg.add_task(log_analytics_task, offer_id, uid, "CLAIM")
-    return AcceptOfferResponse(status="ACCEPTED", offer_id=offer_id, client_id=uid, expires_at=exp, qr_token=qr, accepted_count=o.accepted_count+1, accept_limit=o.accept_limit)
 
+    try:
+        # Insere o Cupom
+        await db.execute(
+            text("""
+                INSERT INTO offer_claims (offer_id, client_id, status, accepted_at, expires_at, qr_token) 
+                VALUES (:oid, :uid, 'ACCEPTED', :now, :exp, :qr)
+            """), 
+            {"oid": offer_id, "uid": uid, "now": now, "exp": exp, "qr": qr}
+        )
+
+        # Atualiza Contagem da Oferta
+        await db.execute(
+            text("UPDATE offers SET accepted_count = accepted_count + 1 WHERE id = :oid"),
+            {"oid": offer_id}
+        )
+
+        # Atualiza o Target para marcar que a pescaria foi bem sucedida
+        await db.execute(
+            text("UPDATE offer_targets SET accepted_at = :now WHERE client_id = :uid AND offer_id = :oid"),
+            {"uid": uid, "oid": offer_id, "now": now}
+        )
+
+        await db.commit()
+        
+        bg.add_task(log_analytics_task, offer_id, uid, "CLAIM")
+        
+        return AcceptOfferResponse(
+            status="ACCEPTED", 
+            offer_id=offer_id, 
+            client_id=uid, 
+            expires_at=exp, 
+            qr_token=qr, 
+            accepted_count=o.accepted_count + 1, 
+            accept_limit=o.accept_limit
+        )
+
+    except Exception as e:
+        await db.rollback()
+        raise e
+    
 @router.get("/my-claims")
 async def get_my_claims(
     uid: int = Depends(get_current_client_id), 

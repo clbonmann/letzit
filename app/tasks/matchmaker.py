@@ -45,6 +45,7 @@ async def _execute_matchmaking_logic():
                 radius_km, 
                 max_target_total, 
                 created_at, 
+                placement,
                 end_at 
             FROM offers 
             WHERE status = 'ACTIVE' 
@@ -60,8 +61,11 @@ async def _execute_matchmaking_logic():
             count_query = text("SELECT count(*) FROM offer_targets WHERE offer_id = :oid")
             current_targets = (await db.execute(count_query, {"oid": offer.id})).scalar()
 
-            #SE A OFERTA MANDAR NULL É PLACEMENT HOME_CITY
-            radius_meters = (offer.radius_km or 25) * 1000 #km para metros
+            #SE A OFERTA PLACEMENT FOR NORMAL, USA O RAIO, SENÃO HOME_CITY.
+            if offer.placement == 'NORMAL':
+                radius_meters = offer.radius_km * 1000 #km para metros
+            else:
+                radius_meters = 25000
 
             limit_val = 500 # Default de segurança
 
@@ -74,7 +78,7 @@ async def _execute_matchmaking_logic():
             
             # --- LÓGICA DE INSERT (A PESCARIA) ---
             fishing_query = text(f"""
-                INSERT INTO offer_targets (offer_id, client_id, batch_no, state, geog_cli, geog_res, target_distance, created_at, released_at)
+                INSERT INTO offer_targets (offer_id, client_id, batch_no, state, geog_cli, geog_res, target_distance, created_at, placement, released_at)
                 SELECT 
                     :oid,          -- offer_id
                     c.id,          -- client_id
@@ -84,6 +88,7 @@ async def _execute_matchmaking_logic():
                     :geog,
                     ST_Distance(c.geog, :geog),
                     :created_at,   -- created_at (Data da oferta)
+                    :placement,
                     NOW()          -- released_at (Data do disparo)
                 FROM clients c
                 WHERE 
@@ -110,6 +115,7 @@ async def _execute_matchmaking_logic():
                     "oid": offer.id,
                     "created_at": offer.created_at,
                     "geog": offer.geog,
+                    "placement":offer.placement,
                     "radius_meters": radius_meters, 
                     "limit": limit_val
                 })
