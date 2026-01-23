@@ -37,7 +37,7 @@ async def _update_restaurant_reputation_logic():
             # 2. Usa IS DISTINCT FROM para só atualizar se a nota mudou
             sql = text("""
                 UPDATE restaurants r
-                SET restaurant_reputation = sub.avg_total
+                SET reputation = sub.avg_total
                 FROM (
                     SELECT 
                         restaurant_id, 
@@ -46,7 +46,7 @@ async def _update_restaurant_reputation_logic():
                     GROUP BY restaurant_id
                 ) AS sub
                 WHERE r.id = sub.restaurant_id
-                  AND (r.restaurant_reputation IS DISTINCT FROM sub.avg_total);
+                  AND (r.reputation IS DISTINCT FROM sub.avg_total);
             """)
             
             # CORREÇÃO: Executa DENTRO do try

@@ -106,3 +106,9 @@ class PicksRequest(BaseModel):
     lon: Optional[float] = Field(None, description="Longitude do cliente")
     city_slug: Optional[str] = Field(None, description="Slug da cidade para filtro")
     placement: str = Field("NORMAL", description="Tipo de oferta: NORMAL, CITY_HOME, etc.")
+
+class RestaurantsRequest(BaseModel):
+    lat: Optional[float] = Field(None, description="Latitude do cliente")
+    long: Optional[float] = Field(None, description="Longitude do cliente")
+    page: Optional[int] = Field(1, description= "Número da página")
+    limit: Optional[int] = Field(10, description= "Número de restaurantes por página")
