@@ -38,40 +38,38 @@ async def mark_offers_as_viewed(uid: int, offer_ids: list, db_session_factory):
         )
         await db.commit()
 
-@router.get("/restaurants", response_model=List[RestaurantDetailsResponse]) # Use o Schema de Resposta correto
+@router.get("/restaurants") # Ajuste o response_model conforme seu arquivo de schemas
 async def get_restaurants_list(
-    # Agrupa lat, long, page, limit
-    params: Annotated[RestaurantsRequest, Depends()], 
-    uid: int = Depends(get_current_client_id), 
+    # Defina os parâmetros explicitamente se RestaurantsRequest não estiver importado
+    lat: float,
+    long: float,
+    page: int = 1,
+    limit: int = 10,
     q: Optional[str] = None,
-    features: Optional[List[str]] = Query(None), # Ex: ?features=wifi&features=parking
+    features: Optional[List[str]] = Query(None),
     db: AsyncSession = Depends(get_db_session),
 ):  
-    offset = (params.page - 1) * params.limit
+    offset = (page - 1) * limit
     
-    # Dicionário de parâmetros para o SQL
     sql_params = {
-        "lat": params.lat,
-        "long": params.long,
-        "limit": params.limit,
+        "lat": lat,
+        "long": long,
+        "limit": limit,
         "offset": offset
     }
 
     # 1. CLÁUSULAS WHERE DINÂMICAS
     where_clauses = ["is_active = TRUE"]
 
-    # A. Filtro de Distância (20km)
-    # IMPORTANTE: ST_MakePoint é (LONGITUDE, LATITUDE)
+    # Filtro de Distância (20km)
     where_clauses.append("ST_DWithin(geog, ST_SetSRID(ST_MakePoint(:long, :lat), 4326), 20000)")
 
-    # B. Filtro de Texto (Nome ou Descrição)
+    # Filtro de Texto
     if q:
         where_clauses.append("(name ILIKE :q OR description ILIKE :q)")
         sql_params["q"] = f"%{q}%"
 
-    # C. Filtro de Features (O Pulo do Gato 🐱)
-    # Precisamos encontrar restaurantes que tenham TODAS as features solicitadas.
-    # Fazemos isso verificando se a contagem de features encontradas bate com a contagem solicitada.
+    # Filtro de Features (Relacional)
     if features:
         where_clauses.append("""
             EXISTS (
@@ -87,12 +85,10 @@ async def get_restaurants_list(
         sql_params["feature_slugs"] = features
         sql_params["feature_count"] = len(features)
 
-    # Junta todos os filtros com 'AND'
     where_string = " AND ".join(where_clauses)
 
     # 2. QUERY PRINCIPAL
-    # Adicionei uma subquery para já retornar as features formatadas para o Frontend (json_object_agg)
-    # Isso evita que o card fique sem os ícones na lista
+    # REMOVIDO O COMENTÁRIO COM {} QUE CAUSAVA O ERRO
     query = text(f"""
         SELECT 
             id, 
@@ -103,7 +99,6 @@ async def get_restaurants_list(
             address_city, 
             address_street as address,
             reputation, 
-            -- Subquery para montar o JSON de features para o frontend: {"wifi": true, "parking": true}
             (
                 SELECT json_object_agg(f.slug, true)
                 FROM restaurant_features rf
@@ -118,7 +113,6 @@ async def get_restaurants_list(
         LIMIT :limit OFFSET :offset
     """)
 
-    # 3. Execução
     result = await db.execute(query, sql_params)
     rows = result.mappings().all()
 
