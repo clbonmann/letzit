@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
 from app.core.celery_app import celery_app
+from app.models import OfferTarget, Offer, OfferClaim, Client
 
 logger = logging.getLogger(__name__)
 # -------------------------------------------
@@ -70,19 +71,22 @@ async def _execute_matchmaking_logic():
             
             # --- LÓGICA DE INSERT (A PESCARIA) ---
             fishing_query = text(f"""
-                INSERT INTO offer_targets (offer_id, client_id, batch_no, state, created_at, released_at)
+                INSERT INTO offer_targets (offer_id, client_id, batch_no, state, geog_cli, geog_res, , target_distance, created_at, released_at)
                 SELECT 
                     :oid,          -- offer_id
                     c.id,          -- client_id
                     1,             -- batch_no
                     'RELEASED',    -- state inicial
+                    c.geog, 
+                    :geog,
+                    ST_Distance(c.geog, :geog),
                     :created_at,   -- created_at (Data da oferta)
                     NOW()          -- released_at (Data do disparo)
                 FROM clients c
                 WHERE 
                     c.is_deleted = FALSE 
-                    AND (c.quarantine_until IS NULL OR c.quarantine_until < NOW())
-                    AND c.last_location_at > (NOW() - INTERVAL '15 minute')
+                    AND (c.cooldown_until IS NULL OR c.cooldown_until < NOW())
+                    AND c.last_loc_at > (NOW() - INTERVAL '15 minute')
                     
                     -- Filtro de Distância (Convertendo km para metros no parametro)
                     AND ST_DWithin(c.geog, :geog, :radius_meters)

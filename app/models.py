@@ -241,6 +241,12 @@ class OfferTarget(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     released_at = Column(DateTime(timezone=True), nullable=True)
     used_at = Column(DateTime(timezone=True), nullable=True)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    redeemed_at = Column(DateTime(timezone=True), nullable=True)
+    viewed_at = Column(DateTime(timezone=True), nullable=True)
+    cli_geog = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
+    res_geog = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
+    target_distance = Column(Integer, nullable=True)
 
     offer = relationship("Offer", back_populates="targets")
     client = relationship("Client", back_populates="targets")
