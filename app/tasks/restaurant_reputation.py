@@ -1,5 +1,6 @@
 from sqlalchemy import text
 from app.db import AsyncSessionLocal # Use sua conexão de banco aqui
+from app.core import celery_app
 
 async def update_restaurant_reputation_task():
     """
