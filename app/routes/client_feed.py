@@ -351,17 +351,16 @@ async def register_offer_click(
     return {"status": "recorded"}
 
 
-# --- ROTA UNIFICADA CORRIGIDA ---
-# 1. Removemos 'response_model' do decorator para aceitar Union dinâmico sem erros
 @router.get("/features")
 async def get_features_unified(
-    # 2. DEFINIÇÃO CRÍTICA: '= Query(None)' torna o campo opcional.
-    # Se você deixar apenas 'restaurant_id: int', ele vira obrigatório e causa erro 422.
-    restaurant_id: Optional[int] = Query(None, description="ID opcional para filtrar features de um restaurante"),
+    # restaurant_id TEM que ser Optional e ter o padrão Query(None)
+    restaurant_id: Optional[int] = Query(None), 
     db: AsyncSession = Depends(get_db_session),
-) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
-    
-    # CENÁRIO A: Tem ID -> Retorna Objeto {"features": {...}}
+):
+    # Debug: Printe no terminal para ver se a requisição chega aqui
+    print(f"DEBUG: Chamou features com id={restaurant_id}")
+
+    # CENÁRIO 1: Tem ID (Detalhes do Restaurante) -> Retorna Dict
     if restaurant_id:
         query = text("""
             SELECT f.slug
@@ -373,14 +372,14 @@ async def get_features_unified(
         
         result = await db.execute(query, {"rid": restaurant_id})
         rows = result.scalars().all()
+        
+        # Retorna: {"features": {"wifi": true}}
+        return {"features": {slug: True for slug in rows}}
 
-        features_map = {slug: True for slug in rows}
-        return {"features": features_map}
-
-    # CENÁRIO B: Sem ID -> Retorna Lista [{'slug': 'wifi', 'name': 'Wi-Fi'}]
+    # CENÁRIO 2: Sem ID (Lista de Filtros) -> Retorna List
     else:
         query = text("SELECT slug, name FROM features WHERE is_active = true ORDER BY name")
         result = await db.execute(query)
         
-        # mappings() converte para dicionário, ideal para JSON
+        # Retorna: [{"slug": "wifi", "name": "Wi-Fi"}, ...]
         return result.mappings().all()
