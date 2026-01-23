@@ -18,6 +18,13 @@ async def log_analytics_task(offer_id: int, client_id: int, event: str):
             await s.commit()
         except Exception: pass
 
+async def update_redeemed_at(offer_id: int, client_id: int):
+    async with AsyncSessionLocal() as s:
+        try:
+            await s.execute(text("UPDATE offer_targets SET redeemed_at = NOW() WHERE client_id = :uid AND offer_id = :oid AND redeemed_at IS NULL"),{"uid": client_id, "oid": offer_id})
+            await s.commit()
+        except Exception: pass
+
 async def validate_owner(db, oid, rid):
     return (await db.execute(text("SELECT 1 FROM offers WHERE id=:oid AND restaurant_id=:rid"), {"oid": oid, "rid": rid})).scalar()
 
@@ -48,9 +55,9 @@ async def consume_qrcode(offer_id: int, payload: RedeemRequest, bg: BackgroundTa
         await db.execute(text("UPDATE offers SET claimed_count=claimed_count+1 WHERE id=:oid"), {"oid": offer_id})
         await db.commit()
         bg.add_task(log_analytics_task, offer_id, upd.client_id, "REDEEM")
+        bg.add_task(update_redeemed_at, offer_id, upd.client_id)
         return RedeemResponse(status=RedeemStatus.REDEEMED, offer_id=offer_id, claim_id=upd.id, client_id=upd.client_id, redeemed_at=upd.redeemed_at)
     
-    await db.execute(text("UPDATE offer_targets SET redeemed_at = NOW() WHERE client_id = :uid AND offer_id = :oid AND redeemed_at IS NULL"),{"uid": upd.client_id, "oid": offer_id})
     await db.rollback()
     return await verify_qrcode(offer_id, payload, db, staff)
 
