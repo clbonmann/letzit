@@ -379,3 +379,16 @@ async def get_restaurant_features(
     # Envolvemos na chave "features" para bater com o frontend: response.data.features
     return {"features": features_map}
 
+# Adicione este endpoint no seu app/routes/client_feed.py ou arquivo equivalente
+
+@router.get("/features")
+async def get_available_features(
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Retorna a lista de features ativas para montar os filtros no App.
+    """
+    query = text("SELECT slug, name FROM features WHERE is_active = true ORDER BY name")
+    result = await db.execute(query)
+    # Retorna lista de dicionários: [{'slug': 'wifi', 'name': 'Wi-Fi'}, ...]
+    return result.mappings().all()
