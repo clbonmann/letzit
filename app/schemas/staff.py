@@ -69,20 +69,17 @@ class RestaurantRead(BaseModel):
     cnpj: str | None = None
     logo_url: Optional[str] = None
     reputation: Optional[float]
-    address_street: str | None = None
-    address_number: str | None = None
-    address_district: str | None = None
-    address_city: str | None = None
-    address_state: str | None = None
-    address_zip: str | None = None
-    address_country: str | None = None
+    address_street: Optional[str] = None
+    address_number: Optional[str] = None
+    address_district: Optional[str] = None
+    address_city: Optional[str] = None
+    address_state: Optional[str] = None
+    address_zip: Optional[str] = None
+    address_country: Optional[str] = None
     decription: Optional[str] = None
     phone: Optional[str] = None
-
     is_open: Optional[bool] = None
     working_hours: Optional[float] = None
-
- 
     lat: Optional[float] = None
     long: Optional[float] = None
     class Config:
