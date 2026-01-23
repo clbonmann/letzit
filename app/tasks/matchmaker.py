@@ -1,11 +1,13 @@
 import asyncio
 import os
+import logging
 from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
 from app.core.celery_app import celery_app
 
+logger = logging.getLogger(__name__)
 # -------------------------------------------
 # 1. PREPARAÇÃO DA URL (CORREÇÃO DO ERRO)
 # -------------------------------------------
@@ -123,6 +125,7 @@ async def _execute_matchmaking_logic():
 # ---------------------------------------------------------
 # 3. A TAREFA DO CELERY (SYNC WRAPPER)
 # ---------------------------------------------------------
-@celery_app.task
+@celery_app.task(name="app.tasks.matchmaker.run_matchmaker_cycle")
 def run_matchmaker_cycle():
+    """Wrapper síncrono para o Celery"""
     return asyncio.run(_execute_matchmaking_logic())
