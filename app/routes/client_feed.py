@@ -98,6 +98,7 @@ async def get_picks(
             o.restaurant_id, 
             r.name AS restaurant_name, 
             r.logo_url, 
+            r.reputation,
             o.title, 
             o.message, 
             o.price_cents,
@@ -138,7 +139,8 @@ async def get_offers_map_source(db: AsyncSession = Depends(get_db_session)):
         SELECT json_build_object('type', 'FeatureCollection', 'features', json_agg(ST_AsGeoJSON(t.*)::json))
         FROM (
             SELECT ST_SetSRID(ST_MakePoint(ST_X(r.geog::geometry), ST_Y(r.geog::geometry)), 4326) as geometry,
-            json_build_object('offer_id', o.id, 'title', o.title, 'price_cents', o.price_cents, 'restaurant_name', r.name, 'logo_url', r.logo_url, 'type', o.placement) as properties
+            json_build_object('offer_id', o.id, 'title', o.title, 'price_cents', o.price_cents, 'restaurant_name', r.name, 
+            'logo_url', r.logo_url, r.reputation, 'type', o.placement) as properties
             FROM offers o JOIN restaurants r ON r.id = o.restaurant_id
             WHERE o.status = 'ACTIVE' AND o.end_at > NOW() AND o.accepted_count < o.accept_limit
         ) as t;
@@ -148,10 +150,14 @@ async def get_offers_map_source(db: AsyncSession = Depends(get_db_session)):
 
 @router.get("/{offer_id}")
 async def get_offer_details(offer_id: int, uid: int = Depends(get_current_client_id), db: AsyncSession = Depends(get_db_session)):
-    row = (await db.execute(
-        text("SELECT o.id, o.title, o.description, o.message, o.price_cents, o.original_price_cents, o.end_at, o.placement, r.name as restaurant_name, r.logo_url, r.cover_image_url, r.address_street, r.address_number, r.phone, ST_Y(r.geog::geometry) as lat, ST_X(r.geog::geometry) as lon FROM offers o JOIN restaurants r ON r.id = o.restaurant_id WHERE o.id = :oid"),
-        {"oid": offer_id}
-    )).mappings().first()
+    query = text("""
+        SELECT o.id, o.title, o.description, o.message, o.price_cents, o.original_price_cents, 
+        o.end_at, o.placement, r.name as restaurant_name, r.logo_url, r.cover_image_url, r.address_street,
+         r.address_number, r.phone, ST_Y(r.geog::geometry) as lat, ST_X(r.geog::geometry) as lon FROM offers o 
+        JOIN restaurants r ON r.id = o.restaurant_id WHERE o.id = :oid
+    """)
+    
+    row = (await db.execute(query, {"oid": offer_id})).mappings().first()
     if not row: raise HTTPException(404, "Oferta não encontrada")
     return row
 
@@ -166,7 +172,7 @@ async def accept_offer(
 
     # 1. Verifica se o usuário foi "pescado" (Targeted) e se já tem um Claim
     # Isso substitui os checks de bloqueio/cooldown que o Matchmaker já fez.
-    check_query = text("""
+    query = text("""
         SELECT 
             t.offer_id, 
             c.status as claim_status, 
@@ -177,7 +183,7 @@ async def accept_offer(
         WHERE t.offer_id = :oid AND t.client_id = :uid
     """)
     
-    check = (await db.execute(check_query, {"oid": offer_id, "uid": uid})).mappings().first()
+    check = (await db.execute(query, {"oid": offer_id, "uid": uid})).mappings().first()
     
     # Se não existe na offer_targets, o usuário não tem direito a esta oferta (segurança)
     if not check:
@@ -264,7 +270,8 @@ async def get_my_claims(
             c.status,
             o.title,
             r.name as restaurant_name,
-            r.logo_url
+            r.logo_url,
+            r.reputation
         FROM offer_claims c
         JOIN offers o ON o.id = c.offer_id
         JOIN restaurants r ON r.id = o.restaurant_id

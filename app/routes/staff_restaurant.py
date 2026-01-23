@@ -61,7 +61,7 @@ async def list_my_restaurants(
     rid = int(staff.get("restaurant_id") or 0)
 
     base_sql = """
-        SELECT id, name, cnpj, logo_url,
+        SELECT id, name, cnpj, logo_url, reputation
                address_street, address_number, address_district,
                address_city, address_state, address_zip, address_country, description, phone, is_open, working_hours,
                ST_Y(geog::geometry) as lat,
