@@ -1,6 +1,6 @@
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Annotated
+from typing import Optional, Annotated, List, Literal, Dict
 from uuid import uuid4
 from fastapi import APIRouter, Depends, Query, HTTPException, BackgroundTasks
 from sqlalchemy import text
@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db_session, AsyncSessionLocal
 from app.deps_client import get_current_client_id
 # IMPORTANDO SCHEMAS
-from app.schemas.client import AcceptOfferResponse, PicksRequest, RestaurantsRequest
+from app.schemas.client import AcceptOfferResponse, PicksRequest, RestaurantsRequest, RestaurantFeaturesResponse
 
 router = APIRouter(prefix="/client/offers", tags=["client-feed"])
 
@@ -300,3 +300,27 @@ async def register_offer_click(
     )
     await db.commit()
     return {"status": "recorded"}
+
+@router.get("/{restaurant_id}/features", response_model=RestaurantFeaturesResponse)
+async def get_restaurant_features(
+    restaurant_id: int,
+    db: AsyncSession = Depends(get_db_session),
+)-> RestaurantFeaturesResponse:
+    # Fetch existing selections joined with group codes
+    rows = (await db.execute(text("""
+        SELECT fg.code, rf.feature_id
+        FROM restaurant_features rf
+        JOIN features f ON f.id = rf.feature_id
+        JOIN feature_groups fg ON fg.id = f.group_id
+        WHERE rf.restaurant_id = :rid
+        ORDER BY fg.code, rf.feature_id
+    """), {"rid": restaurant_id})).mappings().all()
+
+    # Organize by group code dynamically
+    selections: Dict[str, List[int]] = {}
+    for r in rows:
+        code = str(r["code"])
+        fid = int(r["feature_id"])
+        selections.setdefault(code, []).append(fid)
+
+    return RestaurantFeaturesResponse(restaurant_id=restaurant_id, selections=selections)

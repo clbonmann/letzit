@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List, Literal, Dict
 from datetime import date, datetime
 from pydantic import BaseModel, EmailStr, Field
 from geopy.geocoders import Nominatim
@@ -112,3 +112,8 @@ class RestaurantsRequest(BaseModel):
     long: Optional[float] = Field(None, description="Longitude do cliente")
     page: Optional[int] = Field(1, description= "Número da página")
     limit: Optional[int] = Field(10, description= "Número de restaurantes por página")
+
+class RestaurantFeaturesResponse(BaseModel):
+    restaurant_id: int
+    # Retorna o que o restaurante tem salvo, agrupado por código
+    selections: Dict[str, List[int]]
