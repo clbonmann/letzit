@@ -9,7 +9,7 @@ celery_app = Celery(
     "letzit_worker",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["app.tasks.matchmaker"]
+    include=["app.tasks.matchmaker", "app.tasks.restaurant_reputation"]
 )
 
 celery_app.conf.update(
