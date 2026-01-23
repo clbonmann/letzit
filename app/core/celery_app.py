@@ -26,4 +26,9 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.matchmaker.run_matchmaker_cycle",
         "schedule": crontab(minute="*"),
     },
+
+    'update-reputation-every-30-minutes': {
+        'task': 'app.tasks.restaurant_reputation.update_restaurant_reputation_task',
+        'schedule': crontab(minute='*/30'), # Roda a cada 30 minutos
+    },
 }

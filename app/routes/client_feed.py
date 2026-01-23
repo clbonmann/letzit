@@ -29,16 +29,6 @@ async def mark_offers_as_viewed(uid: int, offer_ids: list, db_session_factory):
         )
         await db.commit()
 
-async def log_analytics_task(offer_id: int, client_id: int, event: str):
-    async with AsyncSessionLocal() as session:
-        try:
-            await session.execute(
-                text("INSERT INTO offer_analytics (offer_id, client_id, event_type) VALUES (:oid, :uid, :evt)"),
-                {"oid": offer_id, "uid": client_id, "evt": event}
-            )
-            await session.commit()
-        except Exception as e: print(f"Analytics error: {e}")
-
 @router.get("/restaurants")
 async def get_restaurants_list(
     lat: float,
@@ -243,9 +233,7 @@ async def accept_offer(
         )
 
         await db.commit()
-        
-        bg.add_task(log_analytics_task, offer_id, uid, "CLAIM")
-        
+                
         return AcceptOfferResponse(
             status="ACCEPTED", 
             offer_id=offer_id, 
