@@ -386,4 +386,48 @@ async def register_offer_click(
     await db.commit()
     return {"status": "recorded"}
 
+@router.get("/restaurants/{restaurant_id}")
+async def get_restaurant_details(
+    restaurant_id: int,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """
+    Retorna os detalhes completos de um restaurante específico + suas features.
+    """
+    query = text("""
+        SELECT 
+            r.id, 
+            r.name, 
+            r.description, 
+            r.logo_url, 
+            r.cover_image_url,
+            r.is_open,
+            r.reputation,
+            r.address_street, 
+            r.address_city, 
+            
+            -- Extrai Lat/Long do PostGIS para mostrar no mapa se precisar
+            ST_Y(r.geog::geometry) as lat,
+            ST_X(r.geog::geometry) as long,
 
+            -- Subquery para montar as features: {"wifi": true, "parking": true}
+            (
+                SELECT json_object_agg(f.slug, true)
+                FROM restaurant_features rf
+                JOIN features f ON f.id = rf.feature_id
+                WHERE rf.restaurant_id = r.id
+                AND f.is_active = true
+            ) as features
+
+        FROM restaurants r
+        WHERE r.id = :rid 
+          AND r.is_active = true
+    """)
+
+    result = await db.execute(query, {"rid": restaurant_id})
+    restaurant = result.mappings().first()
+
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado ou inativo.")
+
+    return restaurant
