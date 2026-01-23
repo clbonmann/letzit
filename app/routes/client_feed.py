@@ -31,8 +31,8 @@ async def mark_offers_as_viewed(uid: int, offer_ids: list, db_session_factory):
 
 @router.get("/restaurants")
 async def get_restaurants_list(
-    lat: float,
-    long: float, # O Frontend envia 'long', então renomeamos aqui para bater
+    long: float,
+    lat: float, # O Frontend envia 'long', então renomeamos aqui para bater
     page: int = 1,
     limit: int = 10, # Mudamos o padrão para 10 conforme seu pedido
     db: AsyncSession = Depends(get_db_session)
