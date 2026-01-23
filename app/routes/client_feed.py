@@ -176,7 +176,43 @@ async def get_picks(
         "items": rows
     }
 
+@router.get("/features")
+async def get_features_unified(
+    # 2. 'Query(None)' torna o parâmetro opcional na URL.
+    # Se não enviar, restaurant_id será None.
+    restaurant_id: Optional[int] = Query(None, description="ID opcional do restaurante"),
+    
+    # 3. Apenas sessão do banco. SEM dependência de usuário logado (uid).
+    db: AsyncSession = Depends(get_db_session),
+):
+    """
+    Retorna filtros gerais (se sem ID) ou features de um restaurante (se com ID).
+    Público: Não requer login.
+    """
 
+    # CASO A: Tem ID -> Retorna Dict {"features": {"wifi": true}}
+    if restaurant_id:
+        query = text("""
+            SELECT f.slug
+            FROM restaurant_features rf
+            JOIN features f ON f.id = rf.feature_id
+            WHERE rf.restaurant_id = :rid
+              AND f.is_active = true 
+        """)
+        
+        result = await db.execute(query, {"rid": restaurant_id})
+        rows = result.scalars().all()
+
+        features_map = {slug: True for slug in rows}
+        return {"features": features_map}
+
+    # CASO B: Sem ID -> Retorna Lista [{'slug': 'wifi', 'name': 'Wi-Fi'}]
+    else:
+        query = text("SELECT slug, name FROM features WHERE is_active = true ORDER BY name")
+        result = await db.execute(query)
+        
+        return result.mappings().all()
+    
 @router.get("/map-source")
 async def get_offers_map_source(db: AsyncSession = Depends(get_db_session)):
     query = text("""
@@ -351,39 +387,3 @@ async def register_offer_click(
     return {"status": "recorded"}
 
 
-@router.get("/features")
-async def get_features_unified(
-    # 2. 'Query(None)' torna o parâmetro opcional na URL.
-    # Se não enviar, restaurant_id será None.
-    restaurant_id: Optional[int] = Query(None, description="ID opcional do restaurante"),
-    
-    # 3. Apenas sessão do banco. SEM dependência de usuário logado (uid).
-    db: AsyncSession = Depends(get_db_session),
-):
-    """
-    Retorna filtros gerais (se sem ID) ou features de um restaurante (se com ID).
-    Público: Não requer login.
-    """
-
-    # CASO A: Tem ID -> Retorna Dict {"features": {"wifi": true}}
-    if restaurant_id:
-        query = text("""
-            SELECT f.slug
-            FROM restaurant_features rf
-            JOIN features f ON f.id = rf.feature_id
-            WHERE rf.restaurant_id = :rid
-              AND f.is_active = true 
-        """)
-        
-        result = await db.execute(query, {"rid": restaurant_id})
-        rows = result.scalars().all()
-
-        features_map = {slug: True for slug in rows}
-        return {"features": features_map}
-
-    # CASO B: Sem ID -> Retorna Lista [{'slug': 'wifi', 'name': 'Wi-Fi'}]
-    else:
-        query = text("SELECT slug, name FROM features WHERE is_active = true ORDER BY name")
-        result = await db.execute(query)
-        
-        return result.mappings().all()
