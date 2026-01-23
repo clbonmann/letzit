@@ -353,14 +353,19 @@ async def register_offer_click(
 
 @router.get("/features")
 async def get_features_unified(
-    # restaurant_id TEM que ser Optional e ter o padrão Query(None)
-    restaurant_id: Optional[int] = Query(None), 
+    # 2. 'Query(None)' torna o parâmetro opcional na URL.
+    # Se não enviar, restaurant_id será None.
+    restaurant_id: Optional[int] = Query(None, description="ID opcional do restaurante"),
+    
+    # 3. Apenas sessão do banco. SEM dependência de usuário logado (uid).
     db: AsyncSession = Depends(get_db_session),
 ):
-    # Debug: Printe no terminal para ver se a requisição chega aqui
-    print(f"DEBUG: Chamou features com id={restaurant_id}")
+    """
+    Retorna filtros gerais (se sem ID) ou features de um restaurante (se com ID).
+    Público: Não requer login.
+    """
 
-    # CENÁRIO 1: Tem ID (Detalhes do Restaurante) -> Retorna Dict
+    # CASO A: Tem ID -> Retorna Dict {"features": {"wifi": true}}
     if restaurant_id:
         query = text("""
             SELECT f.slug
@@ -372,14 +377,13 @@ async def get_features_unified(
         
         result = await db.execute(query, {"rid": restaurant_id})
         rows = result.scalars().all()
-        
-        # Retorna: {"features": {"wifi": true}}
-        return {"features": {slug: True for slug in rows}}
 
-    # CENÁRIO 2: Sem ID (Lista de Filtros) -> Retorna List
+        features_map = {slug: True for slug in rows}
+        return {"features": features_map}
+
+    # CASO B: Sem ID -> Retorna Lista [{'slug': 'wifi', 'name': 'Wi-Fi'}]
     else:
         query = text("SELECT slug, name FROM features WHERE is_active = true ORDER BY name")
         result = await db.execute(query)
         
-        # Retorna: [{"slug": "wifi", "name": "Wi-Fi"}, ...]
         return result.mappings().all()
