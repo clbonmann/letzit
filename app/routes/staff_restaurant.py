@@ -213,7 +213,6 @@ async def upload_restaurant_logo(
 
 @router.post("/cover")
 async def upload_restaurant_cover(
-    # Aceita LISTA de arquivos (files) para bater com o FormData do React
     files: List[UploadFile] = File(...), 
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff)
@@ -230,18 +229,18 @@ async def upload_restaurant_cover(
     if current_cover_str:
         cover_list = [c for c in current_cover_str.split(";") if c.strip()]
 
-    # 2. Validação de Limite (Atuais + Novas > 5?)
+    # 2. Validação de Limite
     if len(cover_list) + len(files) > 5:
         raise HTTPException(
             status_code=400, 
-            detail=f"Limite excedido. Você já tem {len(cover_list)} fotos e tentou enviar mais {len(files)}. O máximo é 5."
+            detail=f"Limite excedido. Você já tem {len(cover_list)} fotos. Máximo é 5."
         )
 
-    # Configuração do Cloudinary (O Cloudinary fará o resize para 600x400)
+    # Configuração do Cloudinary (Use 'fill' e não 'cover')
     transformations = {
         "width": 600, 
         "height": 400, 
-        "crop": "cover", # 'cover' corta o excesso para preencher exatamente 600x400
+        "crop": "fill",  # Garante o corte exato sem distorção
         "gravity": "center",
         "quality": "auto",
         "fetch_format": "auto"
@@ -252,19 +251,24 @@ async def upload_restaurant_cover(
     try:
         # 3. Loop de Upload
         for file in files:
-            # CORREÇÃO AQUI: Passamos 'file' (o wrapper UploadFile), e não 'file.file'
-            # A função upload_image precisa do wrapper para ler o content_type
+            # --- TRUQUE PARA CORRIGIR O ERRO 500 ---
+            # O Cloudinary precisa do arquivo bruto (file.file) para leitura síncrona.
+            # Mas sua função upload_image precisa do content_type.
+            # Então pegamos o arquivo bruto e adicionamos o content_type nele manualmente.
+            file_object = file.file
+            setattr(file_object, "content_type", file.content_type)
+            
+            # Agora passamos o objeto síncrono, mas com o atributo content_type
             url = upload_image(
-                file, 
+                file_object, 
                 folder=f"restaurants/{restaurant_id}/cover",
                 transformation=transformations 
             )
             new_urls.append(url)
             
     except Exception as e:
-        print(f"Upload Error: {e}")
-        # Retorna 500 se o Cloudinary falhar, sem sujar o banco
-        raise HTTPException(500, f"Falha no upload: {str(e)}")
+        print(f"Upload Error: {e}") # Olhe seu terminal para ver o erro real se persistir
+        raise HTTPException(500, f"Falha interna no upload: {str(e)}")
 
     # 4. Atualização do Banco de Dados
     if new_urls:
@@ -277,9 +281,7 @@ async def upload_restaurant_cover(
         )
         await db.commit()
 
-    # Retorna as novas URLs para o frontend atualizar a UI na hora
     return {"status": "success", "cover_urls": new_urls}
-
 # ---------------------------
 # REFACTORED FEATURES LOGIC
 # ---------------------------
