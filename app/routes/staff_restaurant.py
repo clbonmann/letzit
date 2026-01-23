@@ -213,65 +213,75 @@ async def upload_restaurant_logo(
 
 @router.post("/cover")
 async def upload_restaurant_cover(
-    file: UploadFile = File(...),
+    # 1. MUDANÇA PRINCIPAL: Aceita uma LISTA de arquivos e o nome é 'files' para bater com o frontend
+    files: List[UploadFile] = File(...), 
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff)
 ):
-    """Upload Logo to Cloudinary + DB Update."""
+    """Upload de múltiplas capas para o Cloudinary + Update no Banco."""
     restaurant_id = int(staff["restaurant_id"])
 
-    try:
-        transformations = {
-            "width": 600, 
-            "height": 400, 
-            "crop": "pad",
-            "background": "white",
-            "gravity": "center",
-            "quality": "auto",
-            "fetch_format": "auto"
-        }
-
-        url = upload_image(
-            file, 
-            folder=f"restaurants/{restaurant_id}/cover",
-            transformation=transformations 
-        )
-        
-    except Exception as e:
-        print(f"Upload Error: {e}")
-        raise HTTPException(500, "Falha no upload da imagem.")
-    
+    # A. Primeiro, buscamos o estado ATUAL do banco para validar o limite
     query_select = text("SELECT cover_image_url FROM restaurants WHERE id = :rid")
     current_res = await db.execute(query_select, {"rid": restaurant_id})
-    current_cover_str = current_res.scalar() # Retorna a string ou None
+    current_cover_str = current_res.scalar()
 
-        # B. Transforma em lista
     cover_list = []
     if current_cover_str:
-        # Separa por ; e remove strings vazias caso existam
         cover_list = [c for c in current_cover_str.split(";") if c.strip()]
 
-    # C. Verifica limite de 5
-    if len(cover_list) >= 5:
-        raise HTTPException(status_code=400, detail="Limite máximo de 5 fotos de capa atingido. Remova uma antes de adicionar.")
-
-    # D. Adiciona a nova URL à lista
-    cover_list.append(url)
-
-    # E. Junta tudo novamente com ponto e vírgula
-    new_cover_str = ";".join(cover_list)
-
-        # F. Atualiza no Banco
-        # Nota: Removi 'logo_updated_at' pois estamos mexendo na capa, não na logo.
-    await db.execute(
-            text("UPDATE restaurants SET cover_image_url = :url WHERE id = :rid"),
-            {"url": new_cover_str, "rid": restaurant_id}
+    # B. Validação de Limite ANTES de fazer o upload (Economiza banda e tempo)
+    if len(cover_list) + len(files) > 5:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Você já tem {len(cover_list)} fotos. Tentou adicionar mais {len(files)}, o que excede o limite de 5."
         )
+
+    # Configuração do Cloudinary (Mantendo a sua config)
+    transformations = {
+        "width": 600, 
+        "height": 400, 
+        "crop": "pad", # ou "fill" se quiser preencher tudo
+        "background": "white",
+        "gravity": "center",
+        "quality": "auto",
+        "fetch_format": "auto"
+    }
+
+    new_urls = []
+
+    try:
+        # C. Loop para fazer upload de cada arquivo recebido
+        for file in files:
+            url = upload_image(
+                file.file, # Nota: upload_image geralmente espera o objeto file-like interno
+                folder=f"restaurants/{restaurant_id}/cover",
+                transformation=transformations 
+            )
+            new_urls.append(url)
+            
+    except Exception as e:
+        print(f"Upload Error: {e}")
+        # Se der erro, idealmente não salvamos nada no banco para manter consistência
+        raise HTTPException(500, "Falha no upload de uma ou mais imagens.")
+
+    # D. Adiciona as novas URLs à lista existente
+    cover_list.extend(new_urls)
+
+    # E. Cria a string final
+    final_cover_str = ";".join(cover_list)
+
+    # F. Atualiza no Banco
+    await db.execute(
+        text("UPDATE restaurants SET cover_image_url = :url WHERE id = :rid"),
+        {"url": final_cover_str, "rid": restaurant_id}
+    )
 
     await db.commit()
 
-    return {"status": "success", "cover_image_url": new_cover_str}
-
+    # Retorna o array de NOVAS urls para o frontend adicionar na UI sem precisar recarregar tudo
+    # Ou retorna a lista completa 'cover_list' se preferir sincronizar o estado total
+    return {"status": "success", "cover_urls": new_urls}
 # ---------------------------
 # REFACTORED FEATURES LOGIC
 # ---------------------------
