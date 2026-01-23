@@ -8,6 +8,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2 import WKTElement
+import io
 
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
@@ -236,11 +237,11 @@ async def upload_restaurant_cover(
             detail=f"Limite excedido. Você já tem {len(cover_list)} fotos. Máximo é 5."
         )
 
-    # Configuração do Cloudinary (Use 'fill' e não 'cover')
+    # Configuração do Cloudinary (crop: fill)
     transformations = {
         "width": 600, 
         "height": 400, 
-        "crop": "fill",  # Garante o corte exato sem distorção
+        "crop": "fill", 
         "gravity": "center",
         "quality": "auto",
         "fetch_format": "auto"
@@ -251,24 +252,23 @@ async def upload_restaurant_cover(
     try:
         # 3. Loop de Upload
         for file in files:
-            # --- TRUQUE PARA CORRIGIR O ERRO 500 ---
-            # O Cloudinary precisa do arquivo bruto (file.file) para leitura síncrona.
-            # Mas sua função upload_image precisa do content_type.
-            # Então pegamos o arquivo bruto e adicionamos o content_type nele manualmente.
-            file_object = file.file
-            setattr(file_object, "content_type", file.content_type)
+            # IMPORTANTE: Se o ponteiro do arquivo foi lido anteriormente, resete-o
+            await file.seek(0)
             
-            # Agora passamos o objeto síncrono, mas com o atributo content_type
+            # --- CORREÇÃO FINAL ---
+            # Passamos o 'file' (Wrapper UploadFile) diretamente.
+            # Sua função 'upload_image' vai acessar '.file' e '.content_type' dentro dele.
             url = upload_image(
-                file_object, 
+                file, 
                 folder=f"restaurants/{restaurant_id}/cover",
                 transformation=transformations 
             )
             new_urls.append(url)
             
     except Exception as e:
-        print(f"Upload Error: {e}") # Olhe seu terminal para ver o erro real se persistir
-        raise HTTPException(500, f"Falha interna no upload: {str(e)}")
+        print(f"Upload Error: {e}")
+        # Retorna 500 com a mensagem detalhada
+        raise HTTPException(500, f"Falha no upload: {str(e)}")
 
     # 4. Atualização do Banco de Dados
     if new_urls:
@@ -282,6 +282,7 @@ async def upload_restaurant_cover(
         await db.commit()
 
     return {"status": "success", "cover_urls": new_urls}
+
 # ---------------------------
 # REFACTORED FEATURES LOGIC
 # ---------------------------
