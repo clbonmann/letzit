@@ -80,7 +80,7 @@ async def _execute_matchmaking_logic():
                     NOW()          -- released_at (Data do disparo)
                 FROM clients c
                 WHERE 
-                    c.is_active = TRUE 
+                    c.is_deleted = FALSE 
                     AND (c.quarantine_until IS NULL OR c.quarantine_until < NOW())
                     AND c.last_location_at > (NOW() - INTERVAL '15 minute')
                     
