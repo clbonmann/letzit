@@ -213,7 +213,7 @@ async def upload_restaurant_logo(
 
 @router.post("/cover")
 async def upload_restaurant_cover(
-    # 1. MUDANÇA PRINCIPAL: Aceita uma LISTA de arquivos e o nome é 'files' para bater com o frontend
+    # Aceita LISTA de arquivos (files) para bater com o FormData do React
     files: List[UploadFile] = File(...), 
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff)
@@ -221,7 +221,7 @@ async def upload_restaurant_cover(
     """Upload de múltiplas capas para o Cloudinary + Update no Banco."""
     restaurant_id = int(staff["restaurant_id"])
 
-    # A. Primeiro, buscamos o estado ATUAL do banco para validar o limite
+    # 1. Busca as capas atuais para validar limite
     query_select = text("SELECT cover_image_url FROM restaurants WHERE id = :rid")
     current_res = await db.execute(query_select, {"rid": restaurant_id})
     current_cover_str = current_res.scalar()
@@ -230,19 +230,18 @@ async def upload_restaurant_cover(
     if current_cover_str:
         cover_list = [c for c in current_cover_str.split(";") if c.strip()]
 
-    # B. Validação de Limite ANTES de fazer o upload (Economiza banda e tempo)
+    # 2. Validação de Limite (Atuais + Novas > 5?)
     if len(cover_list) + len(files) > 5:
         raise HTTPException(
             status_code=400, 
-            detail=f"Você já tem {len(cover_list)} fotos. Tentou adicionar mais {len(files)}, o que excede o limite de 5."
+            detail=f"Limite excedido. Você já tem {len(cover_list)} fotos e tentou enviar mais {len(files)}. O máximo é 5."
         )
 
-    # Configuração do Cloudinary (Mantendo a sua config)
+    # Configuração do Cloudinary (O Cloudinary fará o resize para 600x400)
     transformations = {
         "width": 600, 
         "height": 400, 
-        "crop": "pad", # ou "fill" se quiser preencher tudo
-        "background": "white",
+        "crop": "cover", # 'cover' corta o excesso para preencher exatamente 600x400
         "gravity": "center",
         "quality": "auto",
         "fetch_format": "auto"
@@ -251,10 +250,12 @@ async def upload_restaurant_cover(
     new_urls = []
 
     try:
-        # C. Loop para fazer upload de cada arquivo recebido
+        # 3. Loop de Upload
         for file in files:
+            # CORREÇÃO AQUI: Passamos 'file' (o wrapper UploadFile), e não 'file.file'
+            # A função upload_image precisa do wrapper para ler o content_type
             url = upload_image(
-                file.file, # Nota: upload_image geralmente espera o objeto file-like interno
+                file, 
                 folder=f"restaurants/{restaurant_id}/cover",
                 transformation=transformations 
             )
@@ -262,26 +263,23 @@ async def upload_restaurant_cover(
             
     except Exception as e:
         print(f"Upload Error: {e}")
-        # Se der erro, idealmente não salvamos nada no banco para manter consistência
-        raise HTTPException(500, "Falha no upload de uma ou mais imagens.")
+        # Retorna 500 se o Cloudinary falhar, sem sujar o banco
+        raise HTTPException(500, f"Falha no upload: {str(e)}")
 
-    # D. Adiciona as novas URLs à lista existente
-    cover_list.extend(new_urls)
+    # 4. Atualização do Banco de Dados
+    if new_urls:
+        cover_list.extend(new_urls)
+        final_cover_str = ";".join(cover_list)
 
-    # E. Cria a string final
-    final_cover_str = ";".join(cover_list)
+        await db.execute(
+            text("UPDATE restaurants SET cover_image_url = :url WHERE id = :rid"),
+            {"url": final_cover_str, "rid": restaurant_id}
+        )
+        await db.commit()
 
-    # F. Atualiza no Banco
-    await db.execute(
-        text("UPDATE restaurants SET cover_image_url = :url WHERE id = :rid"),
-        {"url": final_cover_str, "rid": restaurant_id}
-    )
-
-    await db.commit()
-
-    # Retorna o array de NOVAS urls para o frontend adicionar na UI sem precisar recarregar tudo
-    # Ou retorna a lista completa 'cover_list' se preferir sincronizar o estado total
+    # Retorna as novas URLs para o frontend atualizar a UI na hora
     return {"status": "success", "cover_urls": new_urls}
+
 # ---------------------------
 # REFACTORED FEATURES LOGIC
 # ---------------------------

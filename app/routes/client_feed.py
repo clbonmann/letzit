@@ -88,7 +88,6 @@ async def get_restaurants_list(
     where_string = " AND ".join(where_clauses)
 
     # 2. QUERY PRINCIPAL
-    # REMOVIDO O COMENTÁRIO COM {} QUE CAUSAVA O ERRO
     query = text(f"""
         SELECT 
             id, 
@@ -99,6 +98,12 @@ async def get_restaurants_list(
             address_city, 
             address_street as address,
             reputation, 
+            instagram,
+            facebook,
+            tripadvisor,
+            tiktok,
+            site,
+            whatszapp,         
             (
                 SELECT json_object_agg(f.slug, true)
                 FROM restaurant_features rf

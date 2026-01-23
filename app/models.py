@@ -157,6 +157,12 @@ class Restaurant(Base):
     geog = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     balance_km = Column(Integer, default=0, nullable=False)
     reputation = Column(Float, default=0, nullable=True)
+    instagram = Column(String, nullable=True)
+    facebook = Column(String, nullable=True)
+    tiktok = Column(String, nullable=True)
+    tripadvisor = Column(String, nullable=True)
+    site = Column(String, nullable=True)
+    whatszapp = Column(String, nullable=True)
 
     res_features = relationship("RestaurantFeature", back_populates="restaurant", cascade="all, delete-orphan")
     offers = relationship("Offer", back_populates="restaurant")
