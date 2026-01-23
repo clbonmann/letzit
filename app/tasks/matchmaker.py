@@ -71,7 +71,7 @@ async def _execute_matchmaking_logic():
             
             # --- LÓGICA DE INSERT (A PESCARIA) ---
             fishing_query = text(f"""
-                INSERT INTO offer_targets (offer_id, client_id, batch_no, state, geog_cli, geog_res, , target_distance, created_at, released_at)
+                INSERT INTO offer_targets (offer_id, client_id, batch_no, state, geog_cli, geog_res, target_distance, created_at, released_at)
                 SELECT 
                     :oid,          -- offer_id
                     c.id,          -- client_id
