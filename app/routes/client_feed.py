@@ -38,24 +38,62 @@ async def mark_offers_as_viewed(uid: int, offer_ids: list, db_session_factory):
         )
         await db.commit()
 
-@router.get("/restaurants")
+@router.get("/restaurants", response_model=List[RestaurantDetailsResponse]) # Use o Schema de Resposta correto
 async def get_restaurants_list(
-    params: Annotated[RestaurantsRequest, Depends()], # Agrupa lat, long , page, num por page
-    bg: BackgroundTasks,
+    # Agrupa lat, long, page, limit
+    params: Annotated[RestaurantsRequest, Depends()], 
     uid: int = Depends(get_current_client_id), 
+    q: Optional[str] = None,
+    features: Optional[List[str]] = Query(None), # Ex: ?features=wifi&features=parking
     db: AsyncSession = Depends(get_db_session),
 ):  
-    """
-    Lista restaurantes ordenados por distância num raio de 20km.
-    """
     offset = (params.page - 1) * params.limit
-    limit = params.limit
-    lat = params.lat
-    long = params.long
-    # PostGIS:
-    # 1. ST_Distance: Calcula a distância para ordenar e exibir.
-    # 2. ST_DWithin: Filtra quem está DENTRO de 20.000 metros (WHERE clause).
-    query_restaurants = text("""
+    
+    # Dicionário de parâmetros para o SQL
+    sql_params = {
+        "lat": params.lat,
+        "long": params.long,
+        "limit": params.limit,
+        "offset": offset
+    }
+
+    # 1. CLÁUSULAS WHERE DINÂMICAS
+    where_clauses = ["is_active = TRUE"]
+
+    # A. Filtro de Distância (20km)
+    # IMPORTANTE: ST_MakePoint é (LONGITUDE, LATITUDE)
+    where_clauses.append("ST_DWithin(geog, ST_SetSRID(ST_MakePoint(:long, :lat), 4326), 20000)")
+
+    # B. Filtro de Texto (Nome ou Descrição)
+    if q:
+        where_clauses.append("(name ILIKE :q OR description ILIKE :q)")
+        sql_params["q"] = f"%{q}%"
+
+    # C. Filtro de Features (O Pulo do Gato 🐱)
+    # Precisamos encontrar restaurantes que tenham TODAS as features solicitadas.
+    # Fazemos isso verificando se a contagem de features encontradas bate com a contagem solicitada.
+    if features:
+        where_clauses.append("""
+            EXISTS (
+                SELECT 1 
+                FROM restaurant_features rf
+                JOIN features f ON f.id = rf.feature_id
+                WHERE rf.restaurant_id = restaurants.id
+                  AND f.slug = ANY(:feature_slugs)
+                GROUP BY rf.restaurant_id
+                HAVING COUNT(DISTINCT f.slug) = :feature_count
+            )
+        """)
+        sql_params["feature_slugs"] = features
+        sql_params["feature_count"] = len(features)
+
+    # Junta todos os filtros com 'AND'
+    where_string = " AND ".join(where_clauses)
+
+    # 2. QUERY PRINCIPAL
+    # Adicionei uma subquery para já retornar as features formatadas para o Frontend (json_object_agg)
+    # Isso evita que o card fique sem os ícones na lista
+    query = text(f"""
         SELECT 
             id, 
             name, 
@@ -63,24 +101,32 @@ async def get_restaurants_list(
             is_open,
             cover_image_url, 
             address_city, 
-            address_street as address, -- Adicionei address pois o frontend usa
-            reputation, -- O frontend usa para mostrar as estrelinhas
-            ST_Distance(geog, ST_SetSRID(ST_MakePoint(:lat,:long), 4326))::int as distance_meters
+            address_street as address,
+            reputation, 
+            -- Subquery para montar o JSON de features para o frontend: {"wifi": true, "parking": true}
+            (
+                SELECT json_object_agg(f.slug, true)
+                FROM restaurant_features rf
+                JOIN features f ON f.id = rf.feature_id
+                WHERE rf.restaurant_id = restaurants.id
+                AND f.is_active = true
+            ) as features,
+            ST_Distance(geog, ST_SetSRID(ST_MakePoint(:long, :lat), 4326))::int as distance_meters
         FROM restaurants
-        WHERE is_active = TRUE
-          AND ST_DWithin(geog, ST_SetSRID(ST_MakePoint(:lat, :long), 4326), 20000) -- FILTRO DE 20KM
+        WHERE {where_string}
         ORDER BY distance_meters ASC
         LIMIT :limit OFFSET :offset
     """)
-    rows = (await db.execute(query_restaurants, {"uid": uid, "lat": lat, "long": long, "limit": limit, "offset": offset })).mappings().all()
-   
-    return rows
 
+    # 3. Execução
+    result = await db.execute(query, sql_params)
+    rows = result.mappings().all()
+
+    return rows
 
 @router.get("/picks")
 async def get_picks(
     params: Annotated[PicksRequest, Depends()], # Agrupa lat, lon e city_slug
-    bg: BackgroundTasks,
     uid: int = Depends(get_current_client_id), 
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -338,48 +384,4 @@ async def get_restaurant_features(
     # 3. RETORNO:
     # Envolvemos na chave "features" para bater com o frontend: response.data.features
     return {"features": features_map}
-from fastapi import Query
-from sqlalchemy import or_, and_
 
-@router.get("/restaurants/search", response_model=List[RestaurantDetailsResponse])
-async def search_restaurants(
-    q: Optional[str] = None,
-    features: Optional[List[str]] = Query(None), # Recebe ?features=wifi&features=parking
-    db: AsyncSession = Depends(get_db_session)
-):
-    """
-    Filtra restaurantes por Texto (Nome/Descrição) E Features (JSONB).
-    """
-    stmt = select(Restaurant).where(Restaurant.is_active == True)
-
-    # 1. Filtro de Texto (Nome ou Descrição) - ILIKE para ignorar maiúsculas
-    if q:
-        search_term = f"%{q}%"
-        stmt = stmt.where(
-            or_(
-                Restaurant.name.ilike(search_term),
-                Restaurant.description.ilike(search_term)
-            )
-        )
-
-    # 2. Filtro de Features (JSONB)
-    # O operador contains (@>) do Postgres verifica se o JSON contém o sub-JSON
-    if features:
-        # Monta um dicionário {"wifi": true, "parking": true}
-        required_features = {f: True for f in features}
-        stmt = stmt.where(Restaurant.features.contains(required_features))
-
-    result = await db.execute(stmt)
-    rows = result.scalars().all()
-
-    # Mapeia para o schema de resposta (reuse o schema que já criamos antes)
-    return [
-        {
-            "id": r.id,
-            "name": r.name,
-            "logo_url": r.logo_url,
-            "address": r.address_street, # Ajuste conforme seu model
-            "features": r.features or {}
-        }
-        for r in rows
-    ]
