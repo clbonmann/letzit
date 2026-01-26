@@ -81,7 +81,7 @@ class RestaurantRead(BaseModel):
     is_open: Optional[bool] = None
     working_hours: Optional[float] = None
     lat: Optional[float] = None
-    long: Optional[float] = None
+    lon: Optional[float] = None
     class Config:
         from_attributes = True
 
@@ -102,7 +102,7 @@ class RestaurantUpdate(BaseModel):
     is_open: Optional[bool] = None
     working_hours: Optional[float] = None
     lat: Optional[float] = None
-    long: Optional[float] = None
+    lon: Optional[float] = None
 
     
 # --- OFFERS ---
