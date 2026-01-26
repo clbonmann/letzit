@@ -64,7 +64,7 @@ async def get_restaurants_list(
 
     # Filtro de Distância (Raio de 20km)
     # Nota: ST_MakePoint é (Longitude, Latitude)
-    where_clauses.append("ST_DWithin(geog::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 20000)")
+    where_clauses.append("ST_DWithin(geog::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 25000)")
 
     # Filtro de Texto (Nome ou Descrição)
     if q:
@@ -108,7 +108,9 @@ async def get_restaurants_list(
             tripadvisor,
             tiktok,
             site,
-            
+            whatsapp,
+            ST_Y(geog::geometry) as lat,
+            ST_X(geog::geometry) as lon
             (
                 SELECT json_object_agg(f.slug, true)
                 FROM restaurant_features rf
