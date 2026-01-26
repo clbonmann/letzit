@@ -110,7 +110,7 @@ async def get_restaurants_list(
             site,
             whatsapp,
             ST_Y(geog::geometry) as lat,
-            ST_X(geog::geometry) as lon
+            ST_X(geog::geometry) as lon,
             (
                 SELECT json_object_agg(f.slug, true)
                 FROM restaurant_features rf
