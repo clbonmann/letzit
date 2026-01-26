@@ -428,7 +428,14 @@ async def get_restaurant_details(
             r.reputation,
             r.address_street, 
             r.address_city, 
-            
+            -- CAMPOS DE CONTATO E SOCIAL (FALTAVAM AQUI)
+            r.phone,     
+            r.whatsapp,
+            r.instagram,
+            r.facebook,
+            r.tiktok,
+            r.tripadvisor,
+            r.site,       
             -- Extrai Lat/Lon do PostGIS para mostrar no mapa se precisar
             ST_Y(r.geog::geometry) as lat,
             ST_X(r.geog::geometry) as lon,
