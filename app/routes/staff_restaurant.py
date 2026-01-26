@@ -70,7 +70,7 @@ async def list_my_restaurants(
                address_street, address_number, address_district,
                address_city, address_state, address_zip, address_country, description, phone, is_open, working_hours,
                ST_Y(geog::geometry) as lat,
-               ST_X(geog::geometry) as long
+               ST_X(geog::geometry) as lon
         FROM restaurants
     """
 
@@ -131,12 +131,12 @@ async def update_restaurant_details(
             update_data.pop("cnpj") 
 
     # B. Tratamento de Geometria (PostGIS)
-    if "lat" in update_data and "long" in update_data:
+    if "lat" in update_data and "lon" in update_data:
         lat = update_data.pop("lat", None)
-        long = update_data.pop("long", None)
-        if lat is not None and long is not None:
-            update_data["geog"] = WKTElement(f"POINT({long} {lat})", srid=4326)
-            address_info = get_address_from_coords(lat, long)
+        lon = update_data.pop("lon", None)
+        if lat is not None and lon is not None:
+            update_data["geog"] = WKTElement(f"POINT({lon} {lat})", srid=4326)
+            address_info = get_address_from_coords(lat, lon)
             if address_info:
                 update_data["address_city"] = address_info['city']
                 update_data["address_state"] = address_info['state'] 

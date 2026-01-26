@@ -74,8 +74,8 @@ class ClientUpdateProfileRequest(BaseModel):
     birth_date: date | None
 
 class LocationUpdateSchema(BaseModel):
-    latitude: float
-    longitude: float
+    lat: float
+    lon: float
     accuracy: Optional[float] = 0.0
 
 # --- FEED & OFFERS ---
@@ -109,7 +109,7 @@ class PicksRequest(BaseModel):
 
 class RestaurantsRequest(BaseModel):
     lat: Optional[float] = Field(None, description="Latitude do cliente")
-    long: Optional[float] = Field(None, description="Longitude do cliente")
+    lon: Optional[float] = Field(None, description="Longitude do cliente")
     page: Optional[int] = Field(1, description= "Número da página")
     limit: Optional[int] = Field(10, description= "Número de restaurantes por página")
 
@@ -135,7 +135,7 @@ class RestaurantDetailsResponse(BaseModel):
     is_open: bool = False
     
     # Importante ser opcional, pois na busca por texto puro 
-    # as vezes não calculamos a distância se não tiver lat/long do user
+    # as vezes não calculamos a distância se não tiver lat/lon do user
     distance_meters: Optional[float] = None 
     
     # O mapa de features: {"wifi": true, "parking": true}
@@ -147,4 +147,4 @@ class RestaurantDetailsResponse(BaseModel):
 
 class ClientLocationUpdate(BaseModel):
     lat: float
-    long: float
+    lon: float

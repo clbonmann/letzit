@@ -118,7 +118,7 @@ async def get_restaurants_list(
             ) as features,
             
             -- Cálculo exato em metros
-            ST_DistanceSphere(geog::geometry, ST_MakePoint(:long, :lat)) as distance_meters
+            ST_DistanceSphere(geog::geometry, ST_MakePoint(:lon, :lat)) as distance_meters
 
         FROM restaurants
         WHERE {where_string}
@@ -421,9 +421,9 @@ async def get_restaurant_details(
             r.address_street, 
             r.address_city, 
             
-            -- Extrai Lat/Long do PostGIS para mostrar no mapa se precisar
+            -- Extrai Lat/Lon do PostGIS para mostrar no mapa se precisar
             ST_Y(r.geog::geometry) as lat,
-            ST_X(r.geog::geometry) as long,
+            ST_X(r.geog::geometry) as lon,
 
             -- Subquery para montar as features: {"wifi": true, "parking": true}
             (
@@ -465,23 +465,23 @@ async def update_client_location(
 
     try:
         # Atualiza a coluna 'last_location' ou 'geog' na tabela de users/clients
-        # ST_SetSRID(ST_MakePoint(long, lat), 4326) cria o ponto GPS padrão
+        # ST_SetSRID(ST_MakePoint(lon, lat), 4326) cria o ponto GPS padrão
         query = text("""
             UPDATE users 
             SET 
-                geog = ST_SetSRID(ST_MakePoint(:long, :lat), 4326),
+                geog = ST_SetSRID(ST_MakePoint(:lon, :lat), 4326),
                 last_loc_at = NOW()
             WHERE id = :uid
         """)
         
         await db.execute(query, {
             "lat": payload.lat, 
-            "long": payload.long, 
+            "lon": payload.lon, 
             "uid": client_id
         })
         await db.commit()
         
-        return {"status": "updated", "lat": payload.lat, "long": payload.long}
+        return {"status": "updated", "lat": payload.lat, "lon": payload.lon}
 
     except Exception as e:
         print(f"Erro ao atualizar localização: {e}")
