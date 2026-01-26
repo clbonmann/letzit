@@ -128,9 +128,9 @@ async def get_restaurants_list(
 async def get_picks(
     params: Annotated[PicksRequest, Depends()], # Agrupa lat, lon e city_slug
     uid: int = Depends(get_current_client_id),
-    db: AsyncSession = Depends(get_db_session),
-    bg: BackgroundTasks = Depends(BackgroundTasks),
-):
+    db: AsyncSession = Depends(get_db_session)
+):  
+    bg: BackgroundTasks
     # Agora você acessa via params.lat, params.lon, etc.
     lat = params.lat
     lon = params.lon
