@@ -145,6 +145,6 @@ class RestaurantDetailsResponse(BaseModel):
         from_attributes = True
     
 
-    class ClientLocationUpdate(BaseModel):
-        lat: float
-        long: float
+class ClientLocationUpdate(BaseModel):
+    lat: float
+    long: float
