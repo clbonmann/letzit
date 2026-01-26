@@ -136,7 +136,7 @@ async def update_restaurant_details(
         lon = update_data.pop("lon", None)
         if lat is not None and lon is not None:
             update_data["geog"] = WKTElement(f"POINT({lon} {lat})", srid=4326)
-            address_info = get_address_from_coords(lat, lon)
+            address_info = get_address_from_coords(lon, lat)
             if address_info:
                 update_data["address_city"] = address_info['city']
                 update_data["address_state"] = address_info['state'] 
