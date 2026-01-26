@@ -115,6 +115,13 @@ class RestaurantUpdate(BaseModel):
     working_hours: Optional[float] = None
     lat: Optional[float] = None
     lon: Optional[float] = None
+    city_slug: Optional[str] = None
+    instagram: Optional[str] = None
+    facebook: Optional[str] = None
+    tiktok: Optional[str] = None
+    tripadvisor: Optional[str] = None
+    site: Optional[str] = None
+    whatsapp: Optional[str] = None
 
     
 # --- OFFERS ---
