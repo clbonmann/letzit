@@ -127,9 +127,9 @@ async def get_restaurants_list(
 @router.get("/picks")
 async def get_picks(
     params: Annotated[PicksRequest, Depends()], # Agrupa lat, lon e city_slug
-    bg: BackgroundTasks,
-    uid: int = Depends(get_current_client_id), 
+    uid: int = Depends(get_current_client_id),
     db: AsyncSession = Depends(get_db_session),
+    bg: BackgroundTasks = Depends(BackgroundTasks),
 ):
     # Agora você acessa via params.lat, params.lon, etc.
     lat = params.lat
