@@ -82,6 +82,18 @@ class RestaurantRead(BaseModel):
     working_hours: Optional[float] = None
     lat: Optional[float] = None
     lon: Optional[float] = None
+    created_at: Optional[datetime] = None
+    logo_updated_at: Optional[datetime] = None
+    city_slug: Optional[str] = None
+    cover_image_url: Optional[str] = None 
+    updated_at: Optional[datetime] = None
+    instagram: Optional[str] = None
+    facebook: Optional[str] = None
+    tiktok: Optional[str] = None
+    tripadvisor: Optional[str] = None
+    site: Optional[str] = None
+    whatsapp: Optional[str] = None
+
     class Config:
         from_attributes = True
 
