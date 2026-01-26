@@ -162,7 +162,7 @@ class Restaurant(Base):
     tiktok = Column(String, nullable=True)
     tripadvisor = Column(String, nullable=True)
     site = Column(String, nullable=True)
-    whatszapp = Column(String, nullable=True)
+    whatsapp = Column(String, nullable=True)
 
     res_features = relationship("RestaurantFeature", back_populates="restaurant", cascade="all, delete-orphan")
     offers = relationship("Offer", back_populates="restaurant")
