@@ -94,35 +94,40 @@ async def get_restaurants_list(
     # O subselect 'features' retorna um JSON { "wifi": true, "parking": true }
     query = text(f"""
         SELECT 
-            id, 
-            name, 
-            logo_url, 
-            is_open,
-            cover_image_url, 
-            address_city, 
-            address_street as address,
-            reputation, 
-            phone,
-            instagram,
-            facebook,
-            tripadvisor,
-            tiktok,
-            site,
-            whatsapp,
-            ST_Y(geog::geometry) as lat,
-            ST_X(geog::geometry) as lon,
+            r.id, 
+            r.name, 
+            r.description, 
+            r.logo_url, 
+            r.cover_image_url,
+            r.is_open,
+            r.reputation,
+            r.address_street, 
+            r.address_city, 
+            
+            -- CAMPOS DE CONTATO E SOCIAL (FALTAVAM AQUI)
+            r.phone,
+            r.whatsapp,
+            r.instagram,
+            r.facebook,
+            r.tiktok,
+            r.tripadvisor,
+            r.site,
+            
+            -- Extrai Lat/Lon do PostGIS para mostrar no mapa se precisar
+            ST_Y(r.geog::geometry) as lat,
+            ST_X(r.geog::geometry) as lon,
             (
                 SELECT json_object_agg(f.slug, true)
                 FROM restaurant_features rf
                 JOIN features f ON f.id = rf.feature_id
-                WHERE rf.restaurant_id = restaurants.id
+                WHERE rf.restaurant_id = r.id
                 AND f.is_active = true
             ) as features,
             
             -- Cálculo exato em metros
-            ST_DistanceSphere(geog::geometry, ST_MakePoint(:lon, :lat)) as distance_meters
+            ST_DistanceSphere(r.geog::geometry, ST_MakePoint(:lon, :lat)) as distance_meters
 
-        FROM restaurants
+        FROM restaurants r
         WHERE {where_string}
         ORDER BY distance_meters ASC
         LIMIT :limit OFFSET :offset
