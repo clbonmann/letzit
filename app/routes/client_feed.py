@@ -42,7 +42,7 @@ async def mark_offers_as_viewed(uid: int, offer_ids: list, db_session_factory):
 @router.get("/restaurants") # Ajuste o response_model conforme seu arquivo de schemas
 async def get_restaurants_list(
     lat: float,
-    long: float,
+    lon: float,
     page: int = 1,
     limit: int = 10,
     q: Optional[str] = None,
@@ -53,7 +53,7 @@ async def get_restaurants_list(
     
     sql_params = {
         "lat": lat,
-        "long": long,
+        "lon": lon,
         "limit": limit,
         "offset": offset
     }
@@ -64,7 +64,7 @@ async def get_restaurants_list(
 
     # Filtro de Distância (Raio de 20km)
     # Nota: ST_MakePoint é (Longitude, Latitude)
-    where_clauses.append("ST_DWithin(geog::geography, ST_SetSRID(ST_MakePoint(:long, :lat), 4326)::geography, 20000)")
+    where_clauses.append("ST_DWithin(geog::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 20000)")
 
     # Filtro de Texto (Nome ou Descrição)
     if q:
