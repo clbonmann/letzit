@@ -449,8 +449,6 @@ async def get_restaurant_details(
 
 from app.schemas.client import ClientLocationUpdate
 
-router = APIRouter(prefix="/client", tags=["client"])
-
 @router.post("/location")
 async def update_client_location(
     payload: ClientLocationUpdate,
