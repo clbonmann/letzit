@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2 import WKTElement
 import io
+from pydantic import BaseModel
 
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
@@ -29,6 +30,10 @@ from app.models import Restaurant, RestaurantStaff as Staff
 
 router = APIRouter(prefix="/staff/restaurant", tags=["staff-restaurant"])
 
+# --- Helper Models ---
+class DeleteImageRequest(BaseModel):
+    url: str
+
 # --- Helper Functions ---
 
 def _is_internal_admin(staff: dict) -> bool:
@@ -46,7 +51,6 @@ def _require_admin_role(staff: dict) -> None:
         raise HTTPException(status_code=403, detail="Admin role required")
 
 # --- Standard Restaurant Endpoints (List, Update, Upload) ---
-# These remain largely the same but are included for completeness of the file
 
 @router.get("", response_model=List[RestaurantRead])
 async def list_my_restaurants(
@@ -62,7 +66,7 @@ async def list_my_restaurants(
     rid = int(staff.get("restaurant_id") or 0)
 
     base_sql = """
-        SELECT id, name, cnpj, logo_url, reputation,
+        SELECT id, name, cnpj, logo_url, reputation, cover_image_url,
                address_street, address_number, address_district,
                address_city, address_state, address_zip, address_country, description, phone, is_open, working_hours,
                ST_Y(geog::geometry) as lat,
@@ -105,17 +109,13 @@ async def update_restaurant_details(
         rid = int(staff.get("restaurant_id") or 0)
 
     # 2. Busca o restaurante existente (ORM)
-    # Importante para validar existência e comparar CNPJ antigo
     current_restaurant = (await db.execute(select(Restaurant).where(Restaurant.id == rid))).scalars().first()
     
     if not current_restaurant:
         raise HTTPException(404, "Restaurante não encontrado.")
 
     # 3. Prepara os dados dinâmicos
-    # exclude_unset=True pega apenas o que foi enviado no JSON
     update_data = payload.model_dump(exclude_unset=True)
-
-    # Remove o 'id' do dict de update, pois não devemos alterar a PK
     update_data.pop("id", None)
 
     # --- Lógicas Específicas ---
@@ -128,34 +128,29 @@ async def update_restaurant_details(
                 raise HTTPException(400, "CNPJ deve conter 14 dígitos.")
             update_data["cnpj"] = normalized
         else:
-            # Se enviou cnpj null/vazio, mantém o antigo ou trata como quiser
-            # Aqui removo para não alterar se for inválido, ou mantenho lógica antiga
             update_data.pop("cnpj") 
 
     # B. Tratamento de Geometria (PostGIS)
-    # Se lat E long foram enviados, atualiza o campo geog
     if "lat" in update_data and "long" in update_data:
-        lat = update_data.pop("lat", None)   # Pega o valor e REMOVE a chave
+        lat = update_data.pop("lat", None)
         long = update_data.pop("long", None)
         if lat is not None and long is not None:
-            # Cria o ponto WKT (Well-Known Text) com SRID 4326
             update_data["geog"] = WKTElement(f"POINT({long} {lat})", srid=4326)
             address_info = get_address_from_coords(lat, long)
             if address_info:
                 update_data["address_city"] = address_info['city']
                 update_data["address_state"] = address_info['state'] 
+    
     # C. Timestamp da Logo
     if "logo_url" in update_data and update_data["logo_url"]:
         update_data["logo_updated_at"] = datetime.now(timezone.utc)
     
     update_data["updated_at"] = datetime.now(timezone.utc)
 
-    # Se não sobrou nada para atualizar, retorna o atual
     if not update_data:
         return current_restaurant
 
     try:
-        # 4. Executa o Update (SQLAlchemy Core/ORM)
         stmt = (
              update(Restaurant)
             .where(Restaurant.id == rid)
@@ -252,14 +247,15 @@ async def upload_restaurant_cover(
     try:
         # 3. Loop de Upload
         for file in files:
-            # IMPORTANTE: Se o ponteiro do arquivo foi lido anteriormente, resete-o
+            # CORREÇÃO: Reseta ponteiro e 'hackeia' o content_type no objeto file
             await file.seek(0)
+            file_object = file.file
+            # Adiciona atributo content_type ao SpooledTemporaryFile
+            setattr(file_object, "content_type", file.content_type)
             
-            # --- CORREÇÃO FINAL ---
-            # Passamos o 'file' (Wrapper UploadFile) diretamente.
-            # Sua função 'upload_image' vai acessar '.file' e '.content_type' dentro dele.
+            # Passa o file_object que agora é síncrono E tem content_type
             url = upload_image(
-                file, 
+                file_object, 
                 folder=f"restaurants/{restaurant_id}/cover",
                 transformation=transformations 
             )
@@ -267,7 +263,6 @@ async def upload_restaurant_cover(
             
     except Exception as e:
         print(f"Upload Error: {e}")
-        # Retorna 500 com a mensagem detalhada
         raise HTTPException(500, f"Falha no upload: {str(e)}")
 
     # 4. Atualização do Banco de Dados
@@ -283,8 +278,45 @@ async def upload_restaurant_cover(
 
     return {"status": "success", "cover_urls": new_urls}
 
+@router.delete("/cover")
+async def delete_restaurant_cover(
+    payload: DeleteImageRequest,
+    db: AsyncSession = Depends(get_db_session),
+    staff: dict = Depends(get_current_staff)
+):
+    """Remove uma URL específica da lista de capas."""
+    restaurant_id = int(staff["restaurant_id"])
+    url_to_remove = payload.url
+
+    # 1. Pega a lista atual
+    query_select = text("SELECT cover_image_url FROM restaurants WHERE id = :rid")
+    res = await db.execute(query_select, {"rid": restaurant_id})
+    current_str = res.scalar()
+
+    if not current_str:
+        raise HTTPException(404, "Nenhuma imagem encontrada.")
+
+    # 2. Filtra a lista
+    current_list = [c for c in current_str.split(";") if c.strip()]
+    
+    if url_to_remove not in current_list:
+        raise HTTPException(404, "Imagem não encontrada na lista deste restaurante.")
+
+    # Remove a URL
+    new_list = [url for url in current_list if url != url_to_remove]
+    new_str = ";".join(new_list)
+
+    # 3. Atualiza o Banco
+    await db.execute(
+        text("UPDATE restaurants SET cover_image_url = :url WHERE id = :rid"),
+        {"url": new_str, "rid": restaurant_id}
+    )
+    await db.commit()
+
+    return {"status": "deleted", "remaining_urls": new_list}
+
 # ---------------------------
-# REFACTORED FEATURES LOGIC
+# FEATURES LOGIC
 # ---------------------------
 
 @router.get("/features/taxonomy")
@@ -294,15 +326,10 @@ async def get_features_taxonomy(
 ):
     """
     Returns available taxonomy (groups and features).
-    This endpoint is agnostic to specific group codes.
     """
-    # 1. Fetch Groups
     groups = (await db.execute(text("SELECT id, code, name, max_select FROM feature_groups ORDER BY id"))).mappings().all()
-
-    # 2. Fetch Active Features
     features = (await db.execute(text("SELECT id, group_id, slug, name FROM features WHERE is_active = true ORDER BY group_id, name"))).mappings().all()
 
-    # 3. Build Tree in Memory
     features_by_group = {}
     for f in features:
         features_by_group.setdefault(f['group_id'], []).append({
@@ -311,7 +338,6 @@ async def get_features_taxonomy(
             "name": f['name']
         })
 
-    # 4. Construct Response
     response_data = []
     for g in groups:
         response_data.append({
@@ -333,7 +359,6 @@ async def get_restaurant_features(
 ) -> RestaurantFeaturesResponse:
     _require_can_manage_restaurant(staff, restaurant_id)
 
-    # Fetch existing selections joined with group codes
     rows = (await db.execute(text("""
         SELECT fg.code, rf.feature_id
         FROM restaurant_features rf
@@ -343,7 +368,6 @@ async def get_restaurant_features(
         ORDER BY fg.code, rf.feature_id
     """), {"rid": restaurant_id})).mappings().all()
 
-    # Organize by group code dynamically
     selections: Dict[str, List[int]] = {}
     for r in rows:
         code = str(r["code"])
@@ -360,26 +384,20 @@ async def update_restaurant_features(
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
 ):
-    """
-    Updates features using a Delta strategy.
-    """
     _require_admin_role(staff)
     _require_can_manage_restaurant(staff, restaurant_id)
 
-    # 1. Flatten IDs (mantido igual)
     incoming_feature_ids: Set[int] = set()
     if payload.selections:
         for ids in payload.selections.values():
             if ids:
                 incoming_feature_ids.update(ids)
     
-    # Handle Empty Update (Clear All)
     if not incoming_feature_ids:
         await db.execute(text("DELETE FROM restaurant_features WHERE restaurant_id = :rid"), {"rid": restaurant_id})
         await db.commit()
         return RestaurantFeaturesResponse(restaurant_id=restaurant_id, selections={})
 
-    # 2. Dynamic Validation (mantido igual - ISSO AQUI ABRE A TRANSAÇÃO IMPLÍCITA)
     validation_query = text("""
         SELECT f.id as feature_id, fg.code as group_code, fg.max_select
         FROM features f
@@ -389,7 +407,6 @@ async def update_restaurant_features(
     
     valid_features_rows = (await db.execute(validation_query, {"ids": list(incoming_feature_ids)})).mappings().all()
 
-    # ... (Lógica de validação de IDs e Limites mantida igual) ...
     found_ids = {row['feature_id'] for row in valid_features_rows}
     if len(found_ids) != len(incoming_feature_ids):
         invalid_ids = incoming_feature_ids - found_ids
@@ -409,20 +426,16 @@ async def update_restaurant_features(
                 detail=f"Too many selections for group '{group_code}'. Max allowed: {limit}"
             )
 
-    # 3. Delta Update Strategy
     try:
-        # 3.1 Fetch what currently exists
         current_rows = (await db.execute(
             text("SELECT feature_id FROM restaurant_features WHERE restaurant_id = :rid"),
             {"rid": restaurant_id}
         )).scalars().all()
         current_ids = set(current_rows)
 
-        # 3.2 Calculate Delta
         ids_to_insert = list(incoming_feature_ids - current_ids)
         ids_to_delete = list(current_ids - incoming_feature_ids)
 
-        # 3.3 Apply Changes
         if ids_to_delete:
             await db.execute(
                 text("DELETE FROM restaurant_features WHERE restaurant_id = :rid AND feature_id = ANY(:ids)"),
@@ -430,24 +443,22 @@ async def update_restaurant_features(
             )
         
         if ids_to_insert:
-            # INSERT EM LOTE (Fix do erro de sintaxe)
             await db.execute(
                 text("INSERT INTO restaurant_features (restaurant_id, feature_id) VALUES (:rid, :fid)"),
                 [{"rid": restaurant_id, "fid": fid} for fid in ids_to_insert]
             )
 
-        # 3.4 COMMIT FINAL
         await db.commit()
 
     except Exception as e:
         await db.rollback()
         raise e
 
-    # 4. Return updated state
     return RestaurantFeaturesResponse(
         restaurant_id=restaurant_id, 
         selections=payload.selections
     )
+
 @router.patch("/status", response_model=RestaurantStatusUpdate)
 async def update_restaurant_status(
     payload: RestaurantStatusUpdate,
@@ -457,31 +468,21 @@ async def update_restaurant_status(
     """
     Endpoint rápido para alternar status Aberto/Fechado e Horas.
     """
-    # 1. Busca o restaurante (Query ORM)
     rid = int(staff.get("restaurant_id") or 0)
     stmt = select(Restaurant).where(Restaurant.id == rid)
     result = await db.execute(stmt)
     
-    # --- CORREÇÃO AQUI ---
-    # Usamos .scalars().first() para pegar a instância do Objeto (Model),
-    # permitindo edição. Se usar apenas .first() ou .mappings(), vem como leitura.
     restaurant = result.scalars().first() 
-    # ---------------------
 
     if not restaurant:
         raise HTTPException(status_code=404, detail="Restaurant not found")
 
-    # 2. Verifica permissão
-    # _require_admin_role(staff) # Descomente se sua lógica exigir admin
-
-    # 3. Atualiza os campos (Agora funciona pois 'restaurant' é um objeto mutável)
     if payload.is_open is not None:
         restaurant.is_open = payload.is_open
     
     if payload.working_hours is not None:
         restaurant.working_hours = payload.working_hours
 
-    # 4. Salva no banco
     await db.commit()
     await db.refresh(restaurant)
     
