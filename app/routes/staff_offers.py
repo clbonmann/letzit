@@ -345,20 +345,6 @@ async def publish_offer(
     new_status = "ACTIVE" if offer.start_at <= now else "SCHEDULED"
     offer.status = new_status
     offer.start_at = now 
-
-    # GERAR TARGETS
-    radius_meters = radius_needed * 1000
-    stmt_clients = select(Client.id).where(
-        ST_DWithin(Client.geog, restaurant.geog, radius_meters)
-    ).limit(offer.audience_estimate)
-    
-    clients_result = await db.execute(stmt_clients)
-    client_ids = clients_result.scalars().all()
-
-    if client_ids:
-        targets_data = [{"offer_id": offer.id, "client_id": cid, "status": "PENDING", "created_at": now} for cid in client_ids]
-        await db.execute(insert(OfferTarget), targets_data)
-
     offer.updated_at = now
     await db.commit()
     await db.refresh(offer)
