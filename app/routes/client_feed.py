@@ -41,13 +41,12 @@ async def mark_offers_as_viewed(uid: int, offer_ids: list, db_session_factory):
 
 @router.get("/restaurants") # Ajuste o response_model conforme seu arquivo de schemas
 async def get_restaurants_list(
-    # Defina os parâmetros explicitamente se RestaurantsRequest não estiver importado
     lat: float,
     long: float,
     page: int = 1,
     limit: int = 10,
     q: Optional[str] = None,
-    features: Optional[List[str]] = Query(None),
+    features: Optional[List[str]] = Query(None), # Ex: ?features=wifi&features=vegan
     db: AsyncSession = Depends(get_db_session),
 ):  
     offset = (page - 1) * limit
@@ -60,17 +59,20 @@ async def get_restaurants_list(
     }
 
     # 1. CLÁUSULAS WHERE DINÂMICAS
+    # Começamos filtrando apenas os ativos
     where_clauses = ["is_active = TRUE"]
 
-    # Filtro de Distância (20km)
-    where_clauses.append("ST_DWithin(geog, ST_SetSRID(ST_MakePoint(:long, :lat), 4326), 20000)")
+    # Filtro de Distância (Raio de 20km)
+    # Nota: ST_MakePoint é (Longitude, Latitude)
+    where_clauses.append("ST_DWithin(geog::geography, ST_SetSRID(ST_MakePoint(:long, :lat), 4326)::geography, 20000)")
 
-    # Filtro de Texto
+    # Filtro de Texto (Nome ou Descrição)
     if q:
         where_clauses.append("(name ILIKE :q OR description ILIKE :q)")
         sql_params["q"] = f"%{q}%"
 
-    # Filtro de Features (Relacional)
+    # Filtro de Features (Relacional - AND Lógico)
+    # O usuário deve ter TODAS as features solicitadas
     if features:
         where_clauses.append("""
             EXISTS (
@@ -78,7 +80,7 @@ async def get_restaurants_list(
                 FROM restaurant_features rf
                 JOIN features f ON f.id = rf.feature_id
                 WHERE rf.restaurant_id = restaurants.id
-                  AND f.slug = ANY(:feature_slugs)
+                  AND f.slug = ANY(:feature_slugs::text[]) 
                 GROUP BY rf.restaurant_id
                 HAVING COUNT(DISTINCT f.slug) = :feature_count
             )
@@ -89,6 +91,7 @@ async def get_restaurants_list(
     where_string = " AND ".join(where_clauses)
 
     # 2. QUERY PRINCIPAL
+    # O subselect 'features' retorna um JSON { "wifi": true, "parking": true }
     query = text(f"""
         SELECT 
             id, 
@@ -99,12 +102,13 @@ async def get_restaurants_list(
             address_city, 
             address_street as address,
             reputation, 
+            phone,
             instagram,
             facebook,
             tripadvisor,
             tiktok,
             site,
-            whatszapp,         
+            
             (
                 SELECT json_object_agg(f.slug, true)
                 FROM restaurant_features rf
@@ -112,7 +116,10 @@ async def get_restaurants_list(
                 WHERE rf.restaurant_id = restaurants.id
                 AND f.is_active = true
             ) as features,
-            ST_Distance(geog, ST_SetSRID(ST_MakePoint(:long, :lat), 4326))::int as distance_meters
+            
+            -- Cálculo exato em metros
+            ST_DistanceSphere(geog::geometry, ST_MakePoint(:long, :lat)) as distance_meters
+
         FROM restaurants
         WHERE {where_string}
         ORDER BY distance_meters ASC
@@ -122,6 +129,7 @@ async def get_restaurants_list(
     result = await db.execute(query, sql_params)
     rows = result.mappings().all()
 
+    # Retorna lista direta (FastAPI converte para JSON array)
     return rows
 
 @router.get("/picks")
