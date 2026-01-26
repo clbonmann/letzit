@@ -10,7 +10,7 @@ from app.models import OfferTarget, Offer, OfferClaim, Client
 
 logger = logging.getLogger(__name__)
 # -------------------------------------------
-# 1. PREPARAÇÃO DA URL (CORREÇÃO DO ERRO)
+# 1. PREPARAÇÃO DA URL 
 # -------------------------------------------
 raw_url = os.getenv("DATABASE_URL")
 

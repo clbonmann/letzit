@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from app.db import get_db_session, AsyncSessionLocal
-from app.deps_client import get_current_client_id
+from app.deps_client import get_current_client_id   
 from app.models import Restaurant
 
 # IMPORTANDO SCHEMAS
@@ -17,7 +17,8 @@ from app.schemas.client import (
     PicksRequest, 
     RestaurantsRequest, 
     MobileFeaturesResponse, 
-    RestaurantDetailsResponse)
+    RestaurantDetailsResponse,
+    ClientLocationUpdate)
 
 router = APIRouter(prefix="/client/offers", tags=["client-feed"])
 
@@ -126,6 +127,7 @@ async def get_restaurants_list(
 @router.get("/picks")
 async def get_picks(
     params: Annotated[PicksRequest, Depends()], # Agrupa lat, lon e city_slug
+    bg: BackgroundTasks,
     uid: int = Depends(get_current_client_id), 
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -436,3 +438,45 @@ async def get_restaurant_details(
         raise HTTPException(status_code=404, detail="Restaurante não encontrado ou inativo.")
 
     return restaurant
+
+from app.schemas.client import ClientLocationUpdate
+
+router = APIRouter(prefix="/client", tags=["client"])
+
+@router.post("/location")
+async def update_client_location(
+    payload: ClientLocationUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    client: dict = Depends(get_current_client_id)
+):
+    """
+    Atualiza a geolocalização do cliente logado.
+    Salva como um ponto geográfico (PostGIS) para cálculos rápidos de distância.
+    """
+    client_id = client["id"]
+
+    try:
+        # Atualiza a coluna 'last_location' ou 'geog' na tabela de users/clients
+        # ST_SetSRID(ST_MakePoint(long, lat), 4326) cria o ponto GPS padrão
+        query = text("""
+            UPDATE users 
+            SET 
+                geog = ST_SetSRID(ST_MakePoint(:long, :lat), 4326),
+                last_loc_at = NOW()
+            WHERE id = :uid
+        """)
+        
+        await db.execute(query, {
+            "lat": payload.lat, 
+            "long": payload.long, 
+            "uid": client_id
+        })
+        await db.commit()
+        
+        return {"status": "updated", "lat": payload.lat, "long": payload.long}
+
+    except Exception as e:
+        print(f"Erro ao atualizar localização: {e}")
+        await db.rollback()
+        # Não queremos travar o app se isso falhar, então pode retornar erro ou silenciar
+        raise HTTPException(status_code=500, detail="Erro ao salvar localização")
