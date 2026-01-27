@@ -92,12 +92,12 @@ async def upload_offer_image(
         final_offer_str = ";".join(offer_list)
 
         await db.execute(
-            text("UPDATE offers SET offer_image_urls = :url WHERE id = :offer_id"),
+            text("UPDATE offers SET offer_image_url = :url WHERE id = :offer_id"),
             {"url": final_offer_str, "offer_id": offer_id}
         )
         await db.commit()
 
-    return {"status": "success", "offer_image_urls": new_urls}
+    return {"status": "success", "offer_image_url": new_urls}
 
 # --- ENDPOINT 1: LISTAR (AGORA HÍBRIDO: LISTA OU DETALHE) ---
 @router.get("", summary="List or Get Offer")
