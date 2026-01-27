@@ -29,62 +29,50 @@ def _staff_id(staff: dict) -> int: return int(staff.get("id") or staff.get("id")
 def _utc_day_window(now: datetime) -> tuple: return datetime(now.year, now.month, now.day, tzinfo=timezone.utc), datetime(now.year, now.month, now.day, tzinfo=timezone.utc) + timedelta(days=1)
 
 # --- ENDPOINT 0: UPLOAD DE IMAGENS (NOVO) ---
+# app/routes/staff_offers.py
+
 @router.post("/offer-images")
 async def upload_offer_image(
     files: List[UploadFile] = File(...), 
     staff: dict = Depends(get_current_staff)
 ):
-    print("--- INICIANDO UPLOAD ---") # Log 1
-    
     restaurant_id = int(staff["restaurant_id"])
-    new_urls = [] 
+    new_urls = []
 
     # Configuração do Cloudinary
     transformations = {
         "width": 600, 
         "height": 400, 
-        "crop": "fill",
-        "gravity": "center"
+        "crop": "fill", 
+        "gravity": "center",
+        "fetch_format": "auto"
     }
 
     try:
         for file in files:
-            print(f"Processando arquivo: {file.filename}, Tipo: {file.content_type}") # Log 2
-            
-            # TENTATIVA 1: Passar o UploadFile direto (Geralmente funciona melhor com libs modernas)
-            # Se sua função upload_image espera 'bytes', usaremos await file.read()
-            
-            # Vamos garantir que o ponteiro está no início
+            # Prepara o arquivo para leitura
             await file.seek(0)
             
-            # ATENÇÃO: Verifique se sua função 'upload_image' é async ou sync.
-            # Se for sync (def upload_image), remova o 'await'.
-            # Se for async (async def upload_image), mantenha o 'await'.
+            # Pega o objeto de arquivo real dentro do wrapper do FastAPI
+            file_object = file.file 
             
-            print("Chamando serviço de storage...") # Log 3
-            
-            # --- PONTO CRÍTICO ---
-            # Vou assumir que você está usando o 'file' direto. 
-            # Se der erro, tentaremos ler os bytes.
-            url = await upload_image(
-                file, 
+            # Hackzinho para o Cloudinary reconhecer o tipo (se necessário)
+            if hasattr(file, "content_type"):
+                setattr(file_object, "content_type", file.content_type)
+
+            # --- A CORREÇÃO ESTÁ AQUI ---
+            # Removemos o 'await' porque upload_image é síncrono
+            url = upload_image(
+                file_object, 
                 folder=f"restaurants/{restaurant_id}/offers/",
-                # transformation=transformations # Comentei temporariamente para testar se o erro é aqui
+                transformation=transformations 
             )
             
-            print(f"Sucesso! URL: {url}") # Log 4
             new_urls.append(url)
             
     except Exception as e:
-        # ISSO VAI MOSTRAR O ERRO REAL NO SEU TERMINAL
-        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        print("ERRO FATAL NO UPLOAD:")
-        print(e)
-        traceback.print_exc() 
-        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        
-        # Devolve o erro pro frontend (pra você ver no console do navegador também)
-        raise HTTPException(500, detail=f"Erro interno no upload: {str(e)}")
+        print(f"Upload Error: {e}")
+        raise HTTPException(500, f"Falha no upload: {str(e)}")
 
     return {"urls": new_urls}
 
