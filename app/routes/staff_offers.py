@@ -31,13 +31,16 @@ def _utc_day_window(now: datetime) -> tuple: return datetime(now.year, now.month
 @router.post("/offer-images")
 async def upload_offer_image(
     files: List[UploadFile] = File(...), 
-    db: AsyncSession = Depends(get_db_session),
+    # db: AsyncSession = Depends(get_db_session), <--- REMOVIDO (Não precisa de banco aqui)
     staff: dict = Depends(get_current_staff)
 ):
-    """Upload de múltiplas capas para o Cloudinary + Update no Banco."""
+    """
+    Upload de imagens para a pasta do restaurante.
+    Retorna as URLs para o frontend anexar ao formulário de criação.
+    """
     restaurant_id = int(staff["restaurant_id"])
 
-    # Configuração do Cloudinary (crop: fill)
+    # Configuração do Cloudinary
     transformations = {
         "width": 600, 
         "height": 400, 
@@ -46,19 +49,17 @@ async def upload_offer_image(
         "quality": "auto",
         "fetch_format": "auto"
     }
-    offer_list = []
-    new_urls = []
+    
+    new_urls = [] # Lista para devolver ao frontend
 
     try:
-        # 3. Loop de Upload
         for file in files:
-            # CORREÇÃO: Reseta ponteiro e 'hackeia' o content_type no objeto file
+            # Prepara o arquivo para o Cloudinary
             await file.seek(0)
             file_object = file.file
-            # Adiciona atributo content_type ao SpooledTemporaryFile
             setattr(file_object, "content_type", file.content_type)
             
-            # Passa o file_object que agora é síncrono E tem content_type
+            # Salva na pasta do RESTAURANTE (restaurante existe, oferta ainda não)
             url = upload_image(
                 file_object, 
                 folder=f"restaurants/{restaurant_id}/offers/",
@@ -70,12 +71,8 @@ async def upload_offer_image(
         print(f"Upload Error: {e}")
         raise HTTPException(500, f"Falha no upload: {str(e)}")
 
-    # 4. Atualização do Banco de Dados
-    if new_urls:
-        offer_list.extend(new_urls)
-        final_offer_str = ";".join(offer_list)
-    
-    return {"status": "success", "offer_image_url": final_offer_str}
+    # RETORNO CORRIGIDO: Devolve a lista 'urls' para bater com o frontend
+    return {"urls": new_urls}
 
 # --- ENDPOINT 1: LISTAR (AGORA HÍBRIDO: LISTA OU DETALHE) ---
 @router.get("", summary="List or Get Offer")
@@ -108,6 +105,7 @@ async def list_staff_offers(
             o.end_at,
             o.offer_type,        
             o.audience_estimate, 
+            0.offer_image_url,
             COUNT(c.id) FILTER (WHERE c.status='REDEEMED')::int AS redeemed_count, 
             COUNT(c.id) FILTER (WHERE c.status='NO_SHOW')::int AS no_show_count 
         FROM offers o 
