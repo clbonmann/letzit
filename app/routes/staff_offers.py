@@ -31,17 +31,11 @@ def _utc_day_window(now: datetime) -> tuple: return datetime(now.year, now.month
 @router.post("/offer-images")
 async def upload_offer_image(
     files: List[UploadFile] = File(...), 
-    offer_id: int = Query(..., description="ID da oferta para associar as imagens"),
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff)
 ):
     """Upload de múltiplas capas para o Cloudinary + Update no Banco."""
     restaurant_id = int(staff["restaurant_id"])
-
-    # 1. Busca as capas atuais para validar limite
-    query_select = text("SELECT offer_image_url FROM offers WHERE id = :offer_id")
-    current_offer = await db.execute(query_select, {"offer_id": offer_id})
-    current_offer_str = current_offer.scalar()
 
     offer_list = []
     if current_offer_str:
@@ -77,7 +71,7 @@ async def upload_offer_image(
             # Passa o file_object que agora é síncrono E tem content_type
             url = upload_image(
                 file_object, 
-                folder=f"restaurants/{restaurant_id}/offers/{offer_id}/",
+                folder=f"restaurants/{restaurant_id}/offers/",
                 transformation=transformations 
             )
             new_urls.append(url)
@@ -90,14 +84,8 @@ async def upload_offer_image(
     if new_urls:
         offer_list.extend(new_urls)
         final_offer_str = ";".join(offer_list)
-
-        await db.execute(
-            text("UPDATE offers SET offer_image_url = :url WHERE id = :offer_id"),
-            {"url": final_offer_str, "offer_id": offer_id}
-        )
-        await db.commit()
-
-    return {"status": "success", "offer_image_url": new_urls}
+    
+    return {"status": "success", "offer_image_url": final_offer_str}
 
 # --- ENDPOINT 1: LISTAR (AGORA HÍBRIDO: LISTA OU DETALHE) ---
 @router.get("", summary="List or Get Offer")
