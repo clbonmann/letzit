@@ -192,7 +192,7 @@ async def upload_restaurant_logo(
 
         url = upload_image(
             file, 
-            folder=f"restaurants/{restaurant_id}",
+            folder=f"restaurants/{restaurant_id}/logo",
             transformation=transformations 
         )
         
