@@ -23,7 +23,7 @@ async def send_invite_email(email: str, name: str, token: str, restaurant_name: 
 
     try:
         r = resend.Emails.send({
-            "from": "LetzIT Team <nao-responda@letzit.com.br>", # Tem que ser o domínio verificado
+            "from": "LetzIT Team <onboard@letzit.com.br>", # Tem que ser o domínio verificado
             "to": email,
             "subject": subject,
             "html": html_content
