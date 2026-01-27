@@ -17,4 +17,5 @@ geoalchemy2
 geopy
 celery[redis]==5.4.0
 shapely>=2.0.0
-fastapi_mail
+fastapi-mail>=1.4.1
+pydantic>=2.0
