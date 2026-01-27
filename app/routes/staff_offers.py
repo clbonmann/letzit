@@ -77,7 +77,7 @@ async def upload_offer_image(
             # Passa o file_object que agora é síncrono E tem content_type
             url = upload_image(
                 file_object, 
-                folder=f"restaurants/{restaurant_id}/cover",
+                folder=f"restaurants/{restaurant_id}/offers/{offer_id}/",
                 transformation=transformations 
             )
             new_urls.append(url)
