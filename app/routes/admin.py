@@ -48,13 +48,14 @@ async def create_restaurant(
     # Supondo que sua tabela 'staff' ou 'users' tenha um campo 'invite_token' e 'status'
     query_user = text("""
         INSERT INTO restaurant_staff (restaurant_id, name, email, role, is_active, invite_token)
-        VALUES (:rest_id, :name, :email, 'REST_ADMIN', false, :token)
+        VALUES (:rest_id, :name, :email, :role, false, :token)
     """)
     
     await db.execute(query_user, {
         "rest_id": restaurant_id,
         "name": payload.admin_name,
         "email": payload.admin_email,
+        "role": payload.role,
         "token": invite_token
     })
 

@@ -15,6 +15,7 @@ class CreateRestaurantRequest(BaseModel):
     cnpj: str
     admin_name: str
     admin_email: EmailStr
+    role: str 
 
 class CreateRestaurantResponse(BaseModel):
     id: int
