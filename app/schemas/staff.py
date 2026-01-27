@@ -161,7 +161,7 @@ class CreateOfferRequest(BaseModel):
     end_at: Optional[datetime] = None
     active_minutes: Optional[int] = None
     audience_estimate: Optional[int] = None
-    offer_image_urls: Optional[str] = None
+    offer_image_url: Optional[str] = None
 
 class CreateOfferResponse(BaseModel):
     offer_id: int
