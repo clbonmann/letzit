@@ -170,6 +170,7 @@ async def get_picks(
             o.message, 
             o.price_cents,
             o.original_price_cents,
+            o.offer_image_url,
             o.end_at, 
             ST_Distance(r.geog, {ref_point})::int as distance_m, 
             o.placement
