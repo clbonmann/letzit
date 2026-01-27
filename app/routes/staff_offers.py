@@ -1,6 +1,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone, timedelta
-from typing import List
+from typing import List, Optional
+import traceback
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy import insert, text, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,47 +32,60 @@ def _utc_day_window(now: datetime) -> tuple: return datetime(now.year, now.month
 @router.post("/offer-images")
 async def upload_offer_image(
     files: List[UploadFile] = File(...), 
-    # db: AsyncSession = Depends(get_db_session), <--- REMOVIDO (Não precisa de banco aqui)
     staff: dict = Depends(get_current_staff)
 ):
-    """
-    Upload de imagens para a pasta do restaurante.
-    Retorna as URLs para o frontend anexar ao formulário de criação.
-    """
+    print("--- INICIANDO UPLOAD ---") # Log 1
+    
     restaurant_id = int(staff["restaurant_id"])
+    new_urls = [] 
 
     # Configuração do Cloudinary
     transformations = {
         "width": 600, 
         "height": 400, 
-        "crop": "fill", 
-        "gravity": "center",
-        "quality": "auto",
-        "fetch_format": "auto"
+        "crop": "fill",
+        "gravity": "center"
     }
-    
-    new_urls = [] # Lista para devolver ao frontend
 
     try:
         for file in files:
-            # Prepara o arquivo para o Cloudinary
-            await file.seek(0)
-            file_object = file.file
-            setattr(file_object, "content_type", file.content_type)
+            print(f"Processando arquivo: {file.filename}, Tipo: {file.content_type}") # Log 2
             
-            # Salva na pasta do RESTAURANTE (restaurante existe, oferta ainda não)
-            url = upload_image(
-                file_object, 
+            # TENTATIVA 1: Passar o UploadFile direto (Geralmente funciona melhor com libs modernas)
+            # Se sua função upload_image espera 'bytes', usaremos await file.read()
+            
+            # Vamos garantir que o ponteiro está no início
+            await file.seek(0)
+            
+            # ATENÇÃO: Verifique se sua função 'upload_image' é async ou sync.
+            # Se for sync (def upload_image), remova o 'await'.
+            # Se for async (async def upload_image), mantenha o 'await'.
+            
+            print("Chamando serviço de storage...") # Log 3
+            
+            # --- PONTO CRÍTICO ---
+            # Vou assumir que você está usando o 'file' direto. 
+            # Se der erro, tentaremos ler os bytes.
+            url = await upload_image(
+                file, 
                 folder=f"restaurants/{restaurant_id}/offers/",
-                transformation=transformations 
+                # transformation=transformations # Comentei temporariamente para testar se o erro é aqui
             )
+            
+            print(f"Sucesso! URL: {url}") # Log 4
             new_urls.append(url)
             
     except Exception as e:
-        print(f"Upload Error: {e}")
-        raise HTTPException(500, f"Falha no upload: {str(e)}")
+        # ISSO VAI MOSTRAR O ERRO REAL NO SEU TERMINAL
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print("ERRO FATAL NO UPLOAD:")
+        print(e)
+        traceback.print_exc() 
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        
+        # Devolve o erro pro frontend (pra você ver no console do navegador também)
+        raise HTTPException(500, detail=f"Erro interno no upload: {str(e)}")
 
-    # RETORNO CORRIGIDO: Devolve a lista 'urls' para bater com o frontend
     return {"urls": new_urls}
 
 # --- ENDPOINT 1: LISTAR (AGORA HÍBRIDO: LISTA OU DETALHE) ---
