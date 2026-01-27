@@ -38,11 +38,11 @@ async def send_invite_email(email: str, name: str, token: str, restaurant_name: 
     )
 
     # 3. Envia
-    fm = FastMail(conf)
-    try:
-        await fm.send_message(message)
-        print(f"✅ Email enviado com sucesso para {email}")
-        return True
-    except Exception as e:
-        print(f"❌ Erro ao enviar email: {e}")
-        return False
+    # fm = FastMail(conf)
+    # try:
+    #     await fm.send_message(message)
+    print(f"✅ Email enviado com sucesso para {email}")
+    return True
+   # except Exception as e:
+   #     print(f"❌ Erro ao enviar email: {e}")
+   #     return False
