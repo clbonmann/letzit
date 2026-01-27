@@ -52,6 +52,6 @@ class Settings(BaseSettings):
         return self.CELERY_RESULT_BACKEND or self.REDIS_URL
     
 
-    STAFF_ACTIVATION_BASE_URL: str = "https://letzit.com.br/activate"
+    STAFF_ACTIVATION_BASE_URL: str = "https://letzit-admin.vercel.app/activate"
 
 settings = Settings()
