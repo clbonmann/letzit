@@ -229,7 +229,7 @@ class Offer(Base):
     payment_method = Column(String, default="CREDITS")
     cost_amount = Column(Numeric(10, 2), default=0.00)
     geog = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
-
+    offer_image_urls = Column(String, nullable=True)
     restaurant = relationship("Restaurant", back_populates="offers")
     targets = relationship("OfferTarget", back_populates="offer")
     claims = relationship("OfferClaim", back_populates="offer")

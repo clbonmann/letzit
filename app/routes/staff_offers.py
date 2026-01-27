@@ -1,6 +1,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy import insert, text, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2.functions import ST_DWithin
@@ -11,6 +12,7 @@ from app.db import get_db_session
 from app.deps_staff import get_current_staff
 from app.constants.pricing import PRICE_PER_KM_ADHOC
 from app.constants.offer_types import OFFER_TYPE_METADATA
+from app.services.storage import upload_image  # Certifique-se que esta função existe no seu projeto
 
 # Models e Schemas
 from app.models import Offer, OfferTarget, Restaurant, Client, OfferType
@@ -25,6 +27,78 @@ router = APIRouter(prefix="/staff/offers", tags=["staff-offers"])
 def _staff_id(staff: dict) -> int: return int(staff.get("id") or staff.get("id"))
 def _utc_day_window(now: datetime) -> tuple: return datetime(now.year, now.month, now.day, tzinfo=timezone.utc), datetime(now.year, now.month, now.day, tzinfo=timezone.utc) + timedelta(days=1)
 
+# --- ENDPOINT 0: UPLOAD DE IMAGENS (NOVO) ---
+@router.post("/offer-images")
+async def upload_offer_image(
+    files: List[UploadFile] = File(...), 
+    offer_id: int = Query(..., description="ID da oferta para associar as imagens"),
+    db: AsyncSession = Depends(get_db_session),
+    staff: dict = Depends(get_current_staff)
+):
+    """Upload de múltiplas capas para o Cloudinary + Update no Banco."""
+    restaurant_id = int(staff["restaurant_id"])
+
+    # 1. Busca as capas atuais para validar limite
+    query_select = text("SELECT offer_image_url FROM offers WHERE id = :offer_id")
+    current_offer = await db.execute(query_select, {"offer_id": offer_id})
+    current_offer_str = current_offer.scalar()
+
+    offer_list = []
+    if current_offer_str:
+        offer_list = [c for c in current_offer_str.split(";") if c.strip()]
+    # 2. Validação de Limite
+    if len(offer_list) + len(files) > 3:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Limite excedido. Você já tem {len(offer_list)} fotos. Máximo é 3."
+        )
+
+    # Configuração do Cloudinary (crop: fill)
+    transformations = {
+        "width": 600, 
+        "height": 400, 
+        "crop": "fill", 
+        "gravity": "center",
+        "quality": "auto",
+        "fetch_format": "auto"
+    }
+
+    new_urls = []
+
+    try:
+        # 3. Loop de Upload
+        for file in files:
+            # CORREÇÃO: Reseta ponteiro e 'hackeia' o content_type no objeto file
+            await file.seek(0)
+            file_object = file.file
+            # Adiciona atributo content_type ao SpooledTemporaryFile
+            setattr(file_object, "content_type", file.content_type)
+            
+            # Passa o file_object que agora é síncrono E tem content_type
+            url = upload_image(
+                file_object, 
+                folder=f"restaurants/{restaurant_id}/cover",
+                transformation=transformations 
+            )
+            new_urls.append(url)
+            
+    except Exception as e:
+        print(f"Upload Error: {e}")
+        raise HTTPException(500, f"Falha no upload: {str(e)}")
+
+    # 4. Atualização do Banco de Dados
+    if new_urls:
+        offer_list.extend(new_urls)
+        final_offer_str = ";".join(offer_list)
+
+        await db.execute(
+            text("UPDATE offers SET offer_image_urls = :url WHERE id = :offer_id"),
+            {"url": final_offer_str, "offer_id": offer_id}
+        )
+        await db.commit()
+
+    return {"status": "success", "offer_image_urls": new_urls}
+
 # --- ENDPOINT 1: LISTAR (AGORA HÍBRIDO: LISTA OU DETALHE) ---
 @router.get("", summary="List or Get Offer")
 async def list_staff_offers(
@@ -36,14 +110,15 @@ async def list_staff_offers(
     staff: dict = Depends(get_current_staff)
     ):
     """
-    Lista ofertas. Se 'offer_id' for informado, retorna apenas aquela oferta (útil para Repeat).
+    Lista ofertas. Se 'offer_id' for informado, retorna apenas aquela oferta.
     """
-    # Query completa com todos os campos necessários para o Frontend (incluindo Repeat)
+    # Query completa com todos os campos necessários
     sql = """
         SELECT 
             o.id, 
             o.title, 
             o.message, 
+            o.offer_image_url,  -- <--- NOVO CAMPO
             o.placement, 
             o.radius_km, 
             o.price_cents,
@@ -205,11 +280,13 @@ async def create_offer(
     
     offer_type_val = payload.offer_type.value if hasattr(payload.offer_type, 'value') else payload.offer_type
 
+    # Nota: payload.offer_image_url deve vir do Schema CreateOfferRequest
     new_offer = Offer(
         restaurant_id=rid,
         staff_id=staff_id,
         title=payload.title,
         description=payload.message,
+        offer_image_url=payload.offer_image_url, # <--- NOVO CAMPO
         start_at=start_time,
         end_at=end_time,
         offer_type=offer_type_val,
@@ -361,6 +438,7 @@ async def publish_offer(
         start_at=offer.start_at,
         end_at=offer.end_at
     )
+
 @router.get("/audience-estimation")
 async def get_audience_estimation(
     radius_km: float = Query(..., ge=0.1, le=50), # Validação básica (min 100m, max 50km)
@@ -385,8 +463,6 @@ async def get_audience_estimation(
     radius_meters = radius_km * 1000
 
     # 3. Contar Usuários na área (Query Espacial)
-    # Assumindo que sua tabela de usuários se chama 'users' e tem coluna 'geog'
-    # Se você não tiver usuários reais com geog no banco de dev, isso retornará 0.
     stmt_count = select(func.count(Client.id)).where(
         ST_DWithin(Client.geog, restaurant_geog, radius_meters)
     )
@@ -394,13 +470,8 @@ async def get_audience_estimation(
     result_count = await db.execute(stmt_count)
     count = result_count.scalar() or 0
 
-    # DICA PRO: Em ambiente de DEV, se quiser ver números falsos para testar a UI:
-    # import random
-    # if count == 0: count = int(radius_km * 150 * random.uniform(0.8, 1.2))
-
     return {
         "estimated_audience": count,
         "radius_km": radius_km,
         "center_point": "Restaurante"
     }
-# A FUNÇÃO 'get_offer_details' FOI REMOVIDA POIS AGORA 'list_staff_offers' COM 'offer_id' FAZ A MESMA FUNÇÃO.

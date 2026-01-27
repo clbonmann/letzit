@@ -161,6 +161,7 @@ class CreateOfferRequest(BaseModel):
     end_at: Optional[datetime] = None
     active_minutes: Optional[int] = None
     audience_estimate: Optional[int] = None
+    offer_image_urls: Optional[str] = None
 
 class CreateOfferResponse(BaseModel):
     offer_id: int
@@ -179,6 +180,7 @@ class CreateOfferResponse(BaseModel):
     start_at: Optional[datetime] = None
     end_at: Optional[datetime] = None
     status: str | None = Field(default=None, max_length=80)
+    offer_image_urls: Optional[str] = None
 
 class UpdateCreatedOfferRequest(BaseModel):
     offer_id: int
@@ -190,6 +192,7 @@ class UpdateCreatedOfferRequest(BaseModel):
     accept_limit: int | None = Field(default=None, ge=1, le=500)
     max_target_total: int | None = Field(default=None, ge=1, le=5000)
     accept_ttl_hours: int | None = Field(default=None, ge=1, le=72)
+    offer_image_urls: Optional[str] = None
 
 class UpdateCreatedOfferResponse(BaseModel):
     offer_id: int
@@ -202,6 +205,7 @@ class UpdateCreatedOfferResponse(BaseModel):
     accept_limit: int
     max_target_total: int
     accept_ttl_hours: int | None = None
+    offer_image_urls: Optional[str] = None
 
 class CloseOfferRequest(BaseModel):
     reason: str | None = Field(default="MANUAL_CLOSE", max_length=64)
