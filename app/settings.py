@@ -59,8 +59,8 @@ class Settings(BaseSettings):
     MAIL_PASSWORD: str = "cgjf hnev pgkx caua" # Se usar Gmail, gere uma "App Password"
     MAIL_FROM: str = "noreply@letzit.com"
     MAIL_PORT: int = 465
-    MAIL_SERVER: str = "smtp.gmail.com"
+    MAIL_SERVER: str = "smtp.googlemail.com"
     MAIL_FROM_NAME: str = "LetzIT Team"
-    # MAIL_TLS: bool = True (em versões mais novas do pydantic/fastapi-mail a config mudou um pouco, veja abaixo)
+     # MAIL_TLS: bool = True (em versões mais novas do pydantic/fastapi-mail a config mudou um pouco, veja abaixo)
 
 settings = Settings()

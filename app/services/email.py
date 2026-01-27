@@ -14,6 +14,7 @@ conf = ConnectionConfig(
     MAIL_SSL_TLS=True,
     USE_CREDENTIALS=True,
     VALIDATE_CERTS=True
+    TIMEOUT=60
 )
 
 async def send_invite_email(email: str, name: str, token: str, restaurant_name: str):
