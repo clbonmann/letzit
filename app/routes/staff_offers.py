@@ -37,16 +37,6 @@ async def upload_offer_image(
     """Upload de múltiplas capas para o Cloudinary + Update no Banco."""
     restaurant_id = int(staff["restaurant_id"])
 
-    offer_list = []
-    if current_offer_str:
-        offer_list = [c for c in current_offer_str.split(";") if c.strip()]
-    # 2. Validação de Limite
-    if len(offer_list) + len(files) > 3:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Limite excedido. Você já tem {len(offer_list)} fotos. Máximo é 3."
-        )
-
     # Configuração do Cloudinary (crop: fill)
     transformations = {
         "width": 600, 
@@ -56,7 +46,7 @@ async def upload_offer_image(
         "quality": "auto",
         "fetch_format": "auto"
     }
-
+    offer_list = []
     new_urls = []
 
     try:
