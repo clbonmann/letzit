@@ -1,28 +1,12 @@
-# app/services/email.py
-from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
+import resend
 from app.settings import settings
-from app.emails.staff_invite import build_staff_invite_email # <--- Sua função importada aqui
+from app.emails.staff_invite import build_staff_invite_email
 
-# Configuração da Conexão
-conf = ConnectionConfig(
-    MAIL_USERNAME=settings.MAIL_USERNAME,
-    MAIL_PASSWORD=settings.MAIL_PASSWORD,
-    MAIL_FROM=settings.MAIL_FROM,
-    MAIL_PORT=settings.MAIL_PORT,
-    MAIL_SERVER=settings.MAIL_SERVER,
-    MAIL_STARTTLS=True,
-    MAIL_SSL_TLS=False,
-    USE_CREDENTIALS=True,
-    VALIDATE_CERTS=True,
-    TIMEOUT=60
-)
+# Configure a chave (adicione RESEND_API_KEY no .env e settings.py)
+resend.api_key = settings.RESEND_API_KEY
 
 async def send_invite_email(email: str, name: str, token: str, restaurant_name: str):
-    """
-    Constrói o HTML e envia o email usando SMTP assíncrono.
-    """
     
-    # 1. Gera o HTML e Assunto usando sua função
     subject, html_content = build_staff_invite_email(
         staff_name=name,
         restaurant_name=restaurant_name,
@@ -30,20 +14,15 @@ async def send_invite_email(email: str, name: str, token: str, restaurant_name: 
         token=token
     )
 
-    # 2. Prepara a mensagem
-    message = MessageSchema(
-        subject=subject,
-        recipients=[email],  # Lista de destinatários
-        body=html_content,
-        subtype=MessageType.html
-    )
-
-    # 3. Envia
-    fm = FastMail(conf)
     try:
-        await fm.send_message(message)
-        print(f"✅ Email enviado com sucesso para {email}")
+        r = resend.Emails.send({
+            "from": "LetzIT Team <nao-responda@letzit.com.br>", # Tem que ser o domínio verificado
+            "to": email,
+            "subject": subject,
+            "html": html_content
+        })
+        print(f"✅ Email enviado via Resend ID: {r['id']}")
         return True
     except Exception as e:
-        print(f"❌ Erro ao enviar email: {e}")
+        print(f"❌ Erro Resend: {e}")
         return False
