@@ -11,23 +11,19 @@ from sqlalchemy.exc import IntegrityError
 # Imports Locais
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
-from app.models import RestaurantStaff
+from app.emails.staff_invite import build_staff_invite_email
+from app.models import Restaurant, RestaurantStaff
 from app.security import get_password_hash # Certifique-se de importar o hash
+
 from app.schemas.staff import (
     StaffUserResponse, 
     InviteStaffRequest, 
     UpdateStaffRequest, 
     AdminResetPasswordRequest
 )
+from app.services.email import send_invite_email
 
 router = APIRouter(prefix="/staff/team", tags=["Staff Team Management"])
-
-# ==============================================================================
-# HELPER: ENVIO DE EMAIL (MOCK)
-# ==============================================================================
-async def send_invite_email(email: str, name: str, token: str):
-    link = f"https://letzit.com/activate?token={token}"
-    print(f"📧 [EMAIL] Convite para {name} <{email}> | Link: {link}")
 
 # ==============================================================================
 # 1. LISTAR EQUIPE
@@ -76,9 +72,9 @@ async def invite_team_member(
         raise HTTPException(403, "Você não pode criar Super Admins.")
 
     # 1. Check Duplicidade
-    stmt_check = select(RestaurantStaff).where(RestaurantStaff.email == payload.email.lower())
-    existing = (await db.execute(stmt_check)).scalar_one_or_none()
-    if existing:
+    stmt_check = select(RestaurantStaff, Restaurant.name.label("restaurant_name")).join(Restaurant, RestaurantStaff.restaurant_id == Restaurant.id).where(RestaurantStaff.email == payload.email.lower())
+    row = (await db.execute(stmt_check)).scalar_one_or_none()
+    if row:
         raise HTTPException(409, "Este e-mail já está cadastrado.")
 
     # 2. Prepara Dados
@@ -96,13 +92,12 @@ async def invite_team_member(
         activation_expires_at=expires,
         created_at=datetime.now(timezone.utc)
     )
-
+    rest_name = row.restaurant_name
     try:
         db.add(new_staff)
         await db.commit()
         await db.refresh(new_staff)
-        
-        await send_invite_email(new_staff.email, new_staff.name, token)
+        await send_invite_email(new_staff.name, rest_name, new_staff.email, token)
         return new_staff
 
     except IntegrityError:

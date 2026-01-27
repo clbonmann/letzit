@@ -13,6 +13,8 @@ class CreateClientResponse(BaseModel):
 class CreateRestaurantRequest(BaseModel):
     name: str
     cnpj: str
+    admin_name: str
+    admin_email: EmailStr
 
 class CreateRestaurantResponse(BaseModel):
     id: int
