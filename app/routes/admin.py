@@ -43,6 +43,9 @@ async def create_restaurant(
     # 2. GERAR TOKEN DE CONVITE (UUID)
     invite_token = str(uuid.uuid4())
 
+    print(f"admin_name: {payload.admin_name}")
+    print(f"admin_email: {payload.admin_email}")
+
     # 3. CRIAR USUÁRIO ADMIN (Status PENDING ou similar)
     # Importante: Salvamos o invite_token no banco para validar depois quando ele clicar no link
     # Supondo que sua tabela 'staff' ou 'users' tenha um campo 'invite_token' e 'status'
