@@ -50,20 +50,14 @@ async def upload_offer_image(
 
     try:
         for file in files:
-            # Prepara o arquivo para leitura
+            # Garante que o ponteiro de leitura está no início
             await file.seek(0)
             
-            # Pega o objeto de arquivo real dentro do wrapper do FastAPI
-            file_object = file.file 
-            
-            # Hackzinho para o Cloudinary reconhecer o tipo (se necessário)
-            if hasattr(file, "content_type"):
-                setattr(file_object, "content_type", file.content_type)
-
-            # --- A CORREÇÃO ESTÁ AQUI ---
-            # Removemos o 'await' porque upload_image é síncrono
+            # --- CORREÇÃO AQUI ---
+            # Passamos o 'file' (UploadFile) direto, e não 'file.file'.
+            # Sua função upload_image deve saber lidar com o wrapper do FastAPI.
             url = upload_image(
-                file_object, 
+                file, 
                 folder=f"restaurants/{restaurant_id}/offers/",
                 transformation=transformations 
             )
@@ -72,6 +66,7 @@ async def upload_offer_image(
             
     except Exception as e:
         print(f"Upload Error: {e}")
+        # Dica: Se der erro de novo, verifique o arquivo app/services/storage.py
         raise HTTPException(500, f"Falha no upload: {str(e)}")
 
     return {"urls": new_urls}
