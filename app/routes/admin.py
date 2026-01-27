@@ -43,9 +43,6 @@ async def create_restaurant(
     # 2. GERAR TOKEN DE CONVITE (UUID)
     invite_token = str(uuid.uuid4())
 
-    print(f"admin_name: {payload.admin_name}")
-    print(f"admin_email: {payload.admin_email}")
-
     # 3. CRIAR USUÁRIO ADMIN (Status PENDING ou similar)
     # Importante: Salvamos o invite_token no banco para validar depois quando ele clicar no link
     # Supondo que sua tabela 'staff' ou 'users' tenha um campo 'invite_token' e 'status'
@@ -67,6 +64,6 @@ async def create_restaurant(
 
     # 5. ENVIAR O EMAIL (Background Task é melhor, mas await direto funciona pra testar)
     # Chamamos a função que você já criou
-    await send_invite_email(payload.admin_name, restaurant_name, payload.admin_email, invite_token)
+    await send_invite_email(payload.admin_email, payload.admin_name, invite_token, restaurant_name)
 
     return CreateRestaurantResponse(id=restaurant_id, name=restaurant_name)
