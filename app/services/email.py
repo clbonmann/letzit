@@ -1,3 +1,10 @@
+import certifi
+import os
+
+# --- CORREÇÃO DE SSL PARA WINDOWS ---
+# Isso força o sistema a usar o certificado correto instalado pelo pip
+os.environ["SSL_CERT_FILE"] = certifi.where()
+
 import resend
 from app.settings import settings
 from app.emails.staff_invite import build_staff_invite_email
