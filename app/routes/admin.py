@@ -47,7 +47,7 @@ async def create_restaurant(
     # Importante: Salvamos o invite_token no banco para validar depois quando ele clicar no link
     # Supondo que sua tabela 'staff' ou 'users' tenha um campo 'invite_token' e 'status'
     query_user = text("""
-        INSERT INTO restaurant_staff (restaurant_id, name, email, role, is_active, invite_token)
+        INSERT INTO restaurant_staff (restaurant_id, name, email, role, is_active, activation_token)
         VALUES (:rest_id, :name, :email, :role, false, :token)
     """)
     
