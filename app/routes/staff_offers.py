@@ -105,7 +105,7 @@ async def list_staff_offers(
             o.end_at,
             o.offer_type,        
             o.audience_estimate, 
-            0.offer_image_url,
+            o.offer_image_url,
             COUNT(c.id) FILTER (WHERE c.status='REDEEMED')::int AS redeemed_count, 
             COUNT(c.id) FILTER (WHERE c.status='NO_SHOW')::int AS no_show_count 
         FROM offers o 
