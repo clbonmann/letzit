@@ -255,7 +255,7 @@ async def get_offers_map_source(db: AsyncSession = Depends(get_db_session)):
 @router.get("/{offer_id}")
 async def get_offer_details(offer_id: int, uid: int = Depends(get_current_client_id), db: AsyncSession = Depends(get_db_session)):
     query = text("""
-        SELECT o.id, o.title, o.description, o.message, o.price_cents, o.original_price_cents, 
+        SELECT o.id, o.title, o.description, o.message, o.offer_image_url, o.price_cents, o.original_price_cents, 
         o.end_at, o.placement, r.name as restaurant_name, r.logo_url, r.cover_image_url, r.address_street,
          r.address_number, r.phone, ST_Y(r.geog::geometry) as lat, ST_X(r.geog::geometry) as lon FROM offers o 
         JOIN restaurants r ON r.id = o.restaurant_id WHERE o.id = :oid
