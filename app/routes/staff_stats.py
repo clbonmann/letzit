@@ -4,11 +4,12 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Dict
 
 from fastapi import APIRouter, Depends, Header, Query, HTTPException
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
+from app.models import Restaurant
 # IMPORTANDO SCHEMAS (Agora do lugar certo)
 from app.schemas.staff import (
     DashboardStatsResponse,
@@ -102,14 +103,22 @@ async def get_dashboard_stats(
     # Taxa de Conversão Diária
     conversion = (redeemed / accepted * 100) if accepted > 0 else 0.0
 
+    stmt_lock = select(Restaurant).where(Restaurant.id == rid).with_for_update()
+    result_lock = await db.execute(stmt_lock)
+    restaurant = result_lock.scalar_one_or_none()
+    if restaurant and restaurant.balance_km is not None:
+        balance_km = restaurant.balance_km
+    else:
+        balance_km = 0.0
+
     return DashboardStatsResponse(
         total_revenue_cents=kpi.revenue or 0,
         
         today_accepted=accepted,
         today_redeemed=redeemed,
         today_no_shows=kpi.today_no_show or 0,
-        conversion_rate=round(conversion, 1),
-        
+        balance_km=balance_km,
+        conversion_rate_percent=conversion,
         active_offers_count=total_active,
         active_offers_breakdown=breakdown
     )

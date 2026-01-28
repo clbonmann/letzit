@@ -11,6 +11,7 @@ async def process_transaction(
     description_data: dict 
 ) -> RestaurantAccount:
     
+    amount = amount or 0
     # 1. LOCK (Trava de Segurança) 🔒
     stmt_lock = select(Restaurant).where(Restaurant.id == restaurant_id).with_for_update()
     result_lock = await db.execute(stmt_lock)
@@ -28,7 +29,7 @@ async def process_transaction(
     )
     result_last = await db.execute(stmt_last)
     last_account = result_last.scalar_one_or_none()
-
+    
     # Extração segura de valores anteriores
     if last_account:
         previous_balance_km = last_account.balance_km
@@ -40,16 +41,18 @@ async def process_transaction(
         previous_balance_cents = 0
         previous_cost_km_cents = 0
 
+    previous_balance_cents = previous_balance_cents or 0
+    previous_balance_cents = previous_balance_cents or 0
+    previous_balance_km = previous_balance_km or 0
     # 3. CÁLCULOS MATEMÁTICOS 🧮
-
+    
     # Saldo de KM é simples: soma o amount (que pode ser negativo)
     new_balance_km = previous_balance_km + amount
 
     if new_balance_km < 0:
          raise HTTPException(400, "Saldo de KM insuficiente.")
-
     # A lógica se divide aqui: COMPRA vs GASTO
-    if amount > 0:
+    if int(amount) > 0:
         # --- CENÁRIO A: COMPRA (Entrada de Estoque) ---
         # Aqui o Preço Médio Ponderado (PMP) é recalculado.
         
@@ -79,7 +82,7 @@ async def process_transaction(
         if new_balance_km == 0:
             new_balance_cents = 0
 
-
+    
     # 4. Atualizar Tabela Mestra (Snapshot no Restaurante)
     # (Opcional: converter cents de volta pra float/Reais pro usuário ver fácil, ou manter int)
     restaurant.balance_km = new_balance_km
@@ -109,7 +112,7 @@ async def process_transaction(
         # O ideal para custo unitário é guardar Float ou Integer com precisão maior (ex: décimos de centavo).
         cost_km_cents=int(new_cost_km_cents), 
         description=description_data.get("package_name") or description_data.get("offer_name") or "Transação Genérica",
-        
+
         cost_package_cents=int(value * 100) if value > 0 else 0,
         
         is_current=True,

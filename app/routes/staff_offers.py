@@ -408,16 +408,18 @@ async def publish_offer(
     # --- LÓGICA DE DÉBITO FINANCEIRO ---
     # 1. Definir o custo em KM (Regra: 100 KM por 1km de raio, por exemplo)
     # Você pode ajustar essa regra de acordo com o app.constants.pricing
-    radius_val = offer.radius_km or 25
-    
+    radius_val = int(offer.radius_km)* -1
+
+    #print(f"Calculando débito de {radius_val} KM para oferta {offer.id}")
+
     try:
         # 2. Chamar o Service Financeiro (Isso garante lock, histórico e validação)
         # Note o sinal NEGATIVO (-) para indicar débito (saída)
         transaction = await process_transaction(
             db=db,
             restaurant_id=rid,
-            amount=radius_val*-1, # Débito em KM
-            value=0, # Sem valor monetário na publicação, consome crédito
+            amount=radius_val, # Débito em KM
+            value=0.0, # Sem valor monetário na publicação, consome crédito
             description_data={
                 "offer_id": offer.id,
                 "action": "PUBLISH_OFFER",

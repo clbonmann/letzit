@@ -265,7 +265,8 @@ class DashboardStatsResponse(BaseModel):
     today_accepted: int
     today_redeemed: int
     today_no_shows: int
-    conversion_rate: float
+    balance_km: float = 0.0
+    conversion_rate_percent: float
     active_offers_count: int
     active_offers_breakdown: Dict[str, int]
 
