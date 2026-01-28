@@ -8,8 +8,8 @@ from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2 import WKTElement
-import io
 from pydantic import BaseModel
+from fastapi import Header
 
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
@@ -26,6 +26,7 @@ from app.schemas.staff import (
     TaxItem, 
     RestaurantStatusUpdate
 )
+
 from app.models import Restaurant, RestaurantStaff as Staff
 
 router = APIRouter(prefix="/staff/restaurant", tags=["staff-restaurant"])
@@ -56,14 +57,20 @@ def _require_admin_role(staff: dict) -> None:
 async def list_my_restaurants(
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
+    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
 ):
+    logged_rid = int(staff["restaurant_id"])
+    rid = logged_rid
+
+    # Lógica Super Admin
+    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
+        rid = x_restaurant_id
     """
     List restaurants.
     - INTERNAL_ADMIN: Sees all.
     - Normal Staff: Sees only their own.
     """
     role = str(staff.get("role") or "")
-    rid = int(staff.get("restaurant_id") or 0)
 
     base_sql = """
         SELECT id, "name", created_at, is_active, cnpj, address_street, address_number,
@@ -76,8 +83,8 @@ async def list_my_restaurants(
     """
 
     if role == "INTERNAL_ADMIN":
-        query = text(f"{base_sql} ORDER BY id DESC")
-        params = {}
+        query = text(f"{base_sql} WHERE id = :rid")
+        params = {"rid": x_restaurant_id}
     else:
         query = text(f"{base_sql} WHERE id = :rid")
         params = {"rid": rid}
@@ -174,11 +181,17 @@ async def update_restaurant_details(
 async def upload_restaurant_logo(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db_session),
-    staff: dict = Depends(get_current_staff)
+    staff: dict = Depends(get_current_staff),
+    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
 ):
-    """Upload Logo to Cloudinary + DB Update."""
-    restaurant_id = int(staff["restaurant_id"])
+    logged_rid = int(staff["restaurant_id"])
+    rid = logged_rid
 
+    # Lógica Super Admin
+    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
+        rid = x_restaurant_id
+
+    """Upload Logo to Cloudinary + DB Update."""
     try:
         transformations = {
             "width": 150, 
@@ -192,7 +205,7 @@ async def upload_restaurant_logo(
 
         url = upload_image(
             file, 
-            folder=f"restaurants/{restaurant_id}/logo",
+            folder=f"restaurants/{rid}/logo",
             transformation=transformations 
         )
         
@@ -202,7 +215,7 @@ async def upload_restaurant_logo(
 
     await db.execute(
         text("UPDATE restaurants SET logo_url = :url, logo_updated_at = NOW() WHERE id = :rid"),
-        {"url": url, "rid": restaurant_id}
+        {"url": url, "rid": rid}
     )
     await db.commit()
 
@@ -212,14 +225,20 @@ async def upload_restaurant_logo(
 async def upload_restaurant_cover(
     files: List[UploadFile] = File(...), 
     db: AsyncSession = Depends(get_db_session),
-    staff: dict = Depends(get_current_staff)
+    staff: dict = Depends(get_current_staff),
+    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
 ):
+    logged_rid = int(staff["restaurant_id"])
+    rid = logged_rid
+
+    # Lógica Super Admin
+    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
+        rid = x_restaurant_id
     """Upload de múltiplas capas para o Cloudinary + Update no Banco."""
-    restaurant_id = int(staff["restaurant_id"])
 
     # 1. Busca as capas atuais para validar limite
     query_select = text("SELECT cover_image_url FROM restaurants WHERE id = :rid")
-    current_res = await db.execute(query_select, {"rid": restaurant_id})
+    current_res = await db.execute(query_select, {"rid": rid})
     current_cover_str = current_res.scalar()
 
     cover_list = []
@@ -257,7 +276,7 @@ async def upload_restaurant_cover(
             # Passa o file_object que agora é síncrono E tem content_type
             url = upload_image(
                 file_object, 
-                folder=f"restaurants/{restaurant_id}/cover",
+                folder=f"restaurants/{rid}/cover",
                 transformation=transformations 
             )
             new_urls.append(url)
@@ -273,7 +292,7 @@ async def upload_restaurant_cover(
 
         await db.execute(
             text("UPDATE restaurants SET cover_image_url = :url WHERE id = :rid"),
-            {"url": final_cover_str, "rid": restaurant_id}
+            {"url": final_cover_str, "rid": rid}
         )
         await db.commit()
 
@@ -283,15 +302,21 @@ async def upload_restaurant_cover(
 async def delete_restaurant_cover(
     payload: DeleteImageRequest,
     db: AsyncSession = Depends(get_db_session),
-    staff: dict = Depends(get_current_staff)
+    staff: dict = Depends(get_current_staff),
+    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
 ):
+    logged_rid = int(staff["restaurant_id"])
+    rid = logged_rid
+
+    # Lógica Super Admin
+    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
+        rid = x_restaurant_id
     """Remove uma URL específica da lista de capas."""
-    restaurant_id = int(staff["restaurant_id"])
     url_to_remove = payload.url
 
     # 1. Pega a lista atual
     query_select = text("SELECT cover_image_url FROM restaurants WHERE id = :rid")
-    res = await db.execute(query_select, {"rid": restaurant_id})
+    res = await db.execute(query_select, {"rid": rid})
     current_str = res.scalar()
 
     if not current_str:
@@ -310,7 +335,7 @@ async def delete_restaurant_cover(
     # 3. Atualiza o Banco
     await db.execute(
         text("UPDATE restaurants SET cover_image_url = :url WHERE id = :rid"),
-        {"url": new_str, "rid": restaurant_id}
+        {"url": new_str, "rid": rid}
     )
     await db.commit()
 
@@ -465,11 +490,17 @@ async def update_restaurant_status(
     payload: RestaurantStatusUpdate,
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
+    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
 ):
+    logged_rid = int(staff["restaurant_id"])
+    rid = logged_rid
+
+    # Lógica Super Admin
+    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
+        rid = x_restaurant_id
     """
     Endpoint rápido para alternar status Aberto/Fechado e Horas.
     """
-    rid = int(staff.get("restaurant_id") or 0)
     stmt = select(Restaurant).where(Restaurant.id == rid)
     result = await db.execute(stmt)
     

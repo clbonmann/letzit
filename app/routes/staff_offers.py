@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 import traceback
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Header
 from sqlalchemy import insert, text, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2.functions import ST_DWithin
@@ -34,9 +34,16 @@ def _utc_day_window(now: datetime) -> tuple: return datetime(now.year, now.month
 @router.post("/offer-images")
 async def upload_offer_image(
     files: List[UploadFile] = File(...), 
-    staff: dict = Depends(get_current_staff)
+    staff: dict = Depends(get_current_staff),
+    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
 ):
-    restaurant_id = int(staff["restaurant_id"])
+    logged_rid = int(staff["restaurant_id"])
+    restaurant_id = logged_rid
+
+    # Lógica Super Admin
+    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
+        restaurant_id = x_restaurant_id
+        
     new_urls = []
 
     # Configuração do Cloudinary
@@ -79,8 +86,16 @@ async def list_staff_offers(
     placement: str | None = Query(None), 
     limit: int = Query(50), 
     db: AsyncSession = Depends(get_db_session), 
-    staff: dict = Depends(get_current_staff)
-    ):
+    staff: dict = Depends(get_current_staff),
+    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
+):
+    logged_rid = int(staff["restaurant_id"])
+    restaurant_id = logged_rid
+
+    # Lógica Super Admin
+    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
+        restaurant_id = x_restaurant_id
+
     """
     Lista ofertas. Se 'offer_id' for informado, retorna apenas aquela oferta.
     """
@@ -110,7 +125,7 @@ async def list_staff_offers(
         WHERE o.restaurant_id = :rid
     """
     
-    params = {"rid": int(staff["restaurant_id"]), "limit": limit}
+    params = {"rid": restaurant_id, "limit": limit}
     
     # --- FILTROS DINÂMICOS ---
     
@@ -213,9 +228,16 @@ async def quote_offer(
 async def create_offer(
     payload: CreateOfferRequest, 
     db: AsyncSession = Depends(get_db_session), 
-    staff: dict = Depends(get_current_staff)
+    staff: dict = Depends(get_current_staff),
+    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
 ):
-    rid = int(staff["restaurant_id"])
+    logged_rid = int(staff["restaurant_id"])
+    rid = logged_rid
+
+    # Lógica Super Admin
+    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
+        rid = x_restaurant_id
+
     staff_id = int(staff["id"])
     now = datetime.now(timezone.utc)
 
@@ -302,11 +324,19 @@ async def create_offer(
 async def close_offer(
     offer_id: int, 
     db: AsyncSession = Depends(get_db_session), 
-    staff: dict = Depends(get_current_staff)
+    staff: dict = Depends(get_current_staff),
+    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
 ):
+    logged_rid = int(staff["restaurant_id"])
+    rid = logged_rid
+
+    # Lógica Super Admin
+    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
+        rid = x_restaurant_id
+
     stmt = select(Offer).where(
         Offer.id == offer_id,
-        Offer.restaurant_id == int(staff["restaurant_id"])
+        Offer.restaurant_id == rid
     )
     result = await db.execute(stmt)
     offer_obj = result.scalar_one_or_none()
@@ -352,11 +382,19 @@ async def get_offer_types(staff: dict = Depends(get_current_staff)):
 async def publish_offer(
     offer_id: int,
     db: AsyncSession = Depends(get_db_session),
-    staff: dict = Depends(get_current_staff)
+    staff: dict = Depends(get_current_staff),
+    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
 ):
+    logged_rid = int(staff["restaurant_id"])
+    rid = logged_rid
+
+    # Lógica Super Admin
+    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
+        rid = x_restaurant_id
+
     stmt = select(Offer).where(
         Offer.id == offer_id,
-        Offer.restaurant_id == int(staff["restaurant_id"])
+        Offer.restaurant_id == rid
     )
     result = await db.execute(stmt)
     offer = result.scalar_one_or_none()
@@ -417,12 +455,17 @@ async def get_audience_estimation(
     radius_km: float = Query(..., ge=0.1, le=50), # Validação básica (min 100m, max 50km)
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
+    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
 ):
+    logged_rid = int(staff["restaurant_id"])
+    rid = logged_rid
+
+    # Lógica Super Admin
+    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
+        rid = x_restaurant_id
     """
     Calcula quantos usuários estão dentro do raio especificado a partir do restaurante.
     """
-    rid = int(staff.get("restaurant_id") or 0)
-
     # 1. Buscar localização do Restaurante
     stmt_rest = select(Restaurant.geog).where(Restaurant.id == rid)
     result_rest = await db.execute(stmt_rest)

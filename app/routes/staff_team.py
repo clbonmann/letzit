@@ -2,8 +2,7 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 from typing import List, Optional
-
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
@@ -35,13 +34,14 @@ async def list_team_members(
     restaurant_id: Optional[int] = Query(None, description="Filtro para Super Admin"),
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
+    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
 ):
     logged_rid = int(staff["restaurant_id"])
     target_rid = logged_rid
 
     # Lógica Super Admin
-    if staff.get("role") == "INTERNAL_ADMIN" and logged_rid == 1 and restaurant_id:
-        target_rid = restaurant_id
+    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
+        target_rid = x_restaurant_id
 
     stmt = select(RestaurantStaff).where(
         RestaurantStaff.restaurant_id == target_rid
@@ -59,19 +59,17 @@ async def invite_team_member(
     restaurant_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
+    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
 ):
+    target_rid = int(staff["restaurant_id"])
+  
+    # Lógica Super Admin
+    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
+        target_rid = x_restaurant_id
+
     # Verificação de Permissão
     if staff.get("role") not in ["REST_ADMIN", "INTERNAL_ADMIN"]:
         raise HTTPException(403, "Apenas Admins podem convidar.")
-
-    logged_rid = int(staff["restaurant_id"])
-    target_rid = logged_rid
-
-    if staff.get("role") == "INTERNAL_ADMIN" and logged_rid == 1 and restaurant_id:
-        target_rid = restaurant_id
-    
-    if payload.role == "INTERNAL_ADMIN" and logged_rid != 1:
-        raise HTTPException(403, "Você não pode criar Super Admins.")
 
     # 1. Check Duplicidade
     stmt_check = select(RestaurantStaff).where(RestaurantStaff.email == payload.email.lower())
@@ -125,9 +123,9 @@ async def update_team_member(
     payload: UpdateStaffRequest,
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
+    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
 ):
-    if staff.get("role") not in ["REST_ADMIN", "INTERNAL_ADMIN"]:
-        raise HTTPException(403, "Sem permissão.")
+    target_rid = int(staff["restaurant_id"])
 
     # Busca o usuário alvo
     stmt = select(RestaurantStaff).where(RestaurantStaff.id == staff_id)
@@ -138,8 +136,10 @@ async def update_team_member(
         raise HTTPException(404, "Funcionário não encontrado.")
 
     # Validação de acesso a outros restaurantes
-    logged_rid = int(staff["restaurant_id"])
-    if target_user.restaurant_id != logged_rid and staff.get("role") != "INTERNAL_ADMIN":
+    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
+        target_rid = x_restaurant_id
+
+    if target_user.restaurant_id != target_rid and staff.get("role") != "INTERNAL_ADMIN":
          raise HTTPException(403, "Você só pode editar sua própria equipe.")
 
     # Bloqueio: não desativar a si mesmo
@@ -170,6 +170,8 @@ async def admin_reset_password(
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
 ):
+
+    # Verificação de Permissão
     if staff.get("role") not in ["REST_ADMIN", "INTERNAL_ADMIN"]:
         raise HTTPException(403, "Sem permissão.")
 

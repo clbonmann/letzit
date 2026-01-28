@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Header, Query, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,14 +23,20 @@ async def get_dashboard_stats(
     days_revenue: int = Query(30, description="Dias para cálculo de receita total"),
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
+    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
 ):
+    logged_rid = int(staff["restaurant_id"])
+    rid = logged_rid
+
+    # Lógica Super Admin
+    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
+        rid = x_restaurant_id
     """
     Painel Principal:
     1. Resumo Financeiro (Últimos 30 dias).
     2. Operação de HOJE (Para o gerente acompanhar o movimento).
     3. Status das Ofertas (Quantas estão rodando).
     """
-    rid = int(staff["restaurant_id"])
     now = datetime.now(timezone.utc)
     
     # Data de corte para Receita
