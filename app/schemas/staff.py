@@ -52,7 +52,7 @@ class StaffUserResponse(BaseModel):
 class InviteStaffRequest(BaseModel):
     email: EmailStr
     name: str
-    role: str # MANAGER, WAITER, KITCHEN
+    role: str 
 
 class UpdateStaffRequest(BaseModel):
     name: Optional[str] = None

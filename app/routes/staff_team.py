@@ -109,7 +109,7 @@ async def invite_team_member(
         db.add(new_staff)
         await db.commit()
         await db.refresh(new_staff)
-        await send_invite_email(new_staff.name, restaurant_name, new_staff.email, token)
+        await send_invite_email(new_staff.email, new_staff.name, token, restaurant_name)
         return new_staff
 
     except IntegrityError:
