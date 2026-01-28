@@ -14,17 +14,19 @@ resend.api_key = settings.RESEND_API_KEY
 
 async def send_invite_email(email: str, name: str, token: str, restaurant_name: str):
     
+    clean_email = str(email).strip().lower()
+
     subject, html_content = build_staff_invite_email(
         staff_name=name,
         restaurant_name=restaurant_name,
-        staff_email=email,
+        staff_email=clean_email,
         token=token
     )
-
+    
     try:
         r = resend.Emails.send({
             "from": "LetzIT Team <onboard@letzit.com.br>", # Tem que ser o domínio verificado
-            "to": email,
+            "to": clean_email,
             "subject": subject,
             "html": html_content
         })
