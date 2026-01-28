@@ -19,6 +19,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Table,
+    JSON,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -168,6 +169,7 @@ class Restaurant(Base):
     offers = relationship("Offer", back_populates="restaurant")
     staff = relationship("RestaurantStaff", back_populates="restaurant")
     reviews = relationship("RestaurantReview", back_populates="restaurant")
+    account_history = relationship("RestaurantAccount", back_populates="restaurant")
 
 class RestaurantStaff(Base):
     __tablename__ = "restaurant_staff"
@@ -319,3 +321,106 @@ class RestaurantReview(Base):
         CheckConstraint('rating_drink >= 1 AND rating_drink <= 5', name='check_rating_drink'),
         CheckConstraint('rating_environment >= 1 AND rating_environment <= 5', name='check_rating_environment'),
     )
+
+class RestaurantAccount(Base):
+    __tablename__ = "restaurant_account"
+
+    id = Column(Integer, primary_key=True, index=True)
+    restaurant_id = Column(Integer, ForeignKey("restaurants.id"), nullable=False)
+    
+    # Movimentação
+    credit = Column(Float, default=0.0) # Entradas (Pacotes, Estornos)
+    debit = Column(Float, default=0.0)  # Saídas (Ofertas publicadas)
+    balance_km = Column(Float, nullable=False) # Saldo APÓS a transação (Snapshot)
+    description = Column(String, nullable=True) # Descrição da transação
+    cost_km_cents = Column(Integer, nullable=True) # Custo em centavos (km)
+    cost_package_cents = Column(Integer, nullable=True) # Custo do pacote em centavos
+    balance_cents = Column(Integer, nullable=True) # Saldo em centavos (opcional)
+    # Rastreio
+    package_code = Column(String, nullable=True) # Código do pacote (ex: "PKG_PRO")
+    offer_id = Column(Integer, nullable=True)  # ID da oferta (futuro)
+    
+    # Auditoria e Status
+    date_of_bte = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Controle de Cancelamento/Estorno
+    is_current = Column(Boolean, default=True) # Se é o registro válido atual
+    is_canceled = Column(Boolean, default=False)
+    canceled_at = Column(DateTime(timezone=True), nullable=True)
+    
+    is_reversed = Column(Boolean, default=False) # Se foi devolvido (ex: oferta cancelada)
+    reversed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Relacionamento (Opcional, ajuda em queries)
+    restaurant = relationship("Restaurant", back_populates="account_history")
+
+# 1. Tabela de Grupos (Ex: Culinária, Restaurantes, Ofertas)
+class FavouritesGroup(Base):
+    __tablename__ = "favourites_group"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False) # Ex: "CUISINE_TYPE", "RESTAURANT"
+    name = Column(String, nullable=False) # Ex: "Tipo de Culinária"
+    max_select = Column(Integer, default=1) # 0 = Ilimitado, 1 = Único, 3 = Top 3
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relacionamento com os itens
+    items = relationship("Favourite", back_populates="group", cascade="all, delete-orphan")
+
+
+# 2. Tabela de Itens Favoritos (Ex: Sushi, Pizza, Pet Friendly)
+class Favourite(Base):
+    __tablename__ = "favourites"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("favourites_group.id"), nullable=False)
+    
+    slug = Column(String, unique=True, index=True, nullable=False) # Ex: "cuisine-sushi"
+    name = Column(String, nullable=False) # Ex: "Sushi / Japonesa"
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relacionamentos
+    group = relationship("FavouritesGroup", back_populates="items")
+    # Relacionamento com clientes (via tabela associativa abaixo)
+    client_associations = relationship("ClientFavourite", back_populates="favourite")
+
+
+# 3. Tabela de Ligação (Cliente <-> Favorito)
+class ClientFavourite(Base):
+    __tablename__ = "client_favourites"
+
+    # Chave primária composta (evita duplicidade do mesmo favorito pro mesmo cliente)
+    client_id = Column(Integer, ForeignKey("clients.id"), primary_key=True) # Ajuste "users.id" se sua tabela de clientes tiver outro nome
+    favourite_id = Column(Integer, ForeignKey("favourites.id"), primary_key=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relacionamentos para facilitar queries
+    # client = relationship("User", back_populates="favourites") # Precisaria adicionar no model User
+    favourite = relationship("Favourite", back_populates="client_associations")
+
+class Packages(Base):
+    __tablename__ = "packages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # Identificador único para uso interno (ex: "PKG_STARTER")
+    code = Column(String, unique=True, index=True, nullable=False)
+    
+    name = Column(String, nullable=False)        # Ex: "Pescaria Rápida"
+    description = Column(String, nullable=True)  # Ex: "Ideal para testar..."
+    
+    km = Column(Float, nullable=False)           # Quantidade de créditos (ex: 500)
+    price = Column(Float, nullable=False)        # Preço (ex: 49.90)
+    
+    # Lista de vantagens para exibir no card (ex: ["Alcance 500m", "Suporte Básico"])
+    features = Column(JSON, default=list) 
+    
+    # Controle Visual e Lógico
+    is_active = Column(Boolean, default=True)    # Se aparece na loja
+    is_popular = Column(Boolean, default=False)  # Se ganha o destaque visual
+    
+    # Visual (Opcional - guarda a cor do card, ex: "violet", "slate")
+    color_theme = Column(String, default="slate")

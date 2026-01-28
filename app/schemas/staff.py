@@ -311,3 +311,48 @@ class RestaurantFeaturesUpdateResponse(BaseModel):
 class RestaurantStatusUpdate(BaseModel):
     is_open: Optional[bool] = None
     working_hours: Optional[int] = Field(None, ge=1, le=24)
+
+class AccountHistoryResponse(BaseModel):
+    id: int
+    credit: float
+    debit: float
+    balance_km: float
+    package_code: Optional[str] = None
+    offer_id: Optional[int] = None
+    date_of_bte: datetime
+    description: str # Vamos computar isso na hora de exibir (ex: "Compra de Pacote" ou "Oferta #123")
+
+    class Config:
+        from_attributes = True
+
+class BalanceResponse(BaseModel):
+    balance_km: float
+    last_update: datetime
+
+class BuyPackageRequest(BaseModel):
+    package_code: str # Ex: "PKG_STARTER"
+
+class PackageResponse(BaseModel):
+    id: int
+    code: str
+    name: str
+    description: Optional[str] = None
+    km: float
+    price: float
+    features: List[str]
+    is_popular: bool
+    color_theme: str
+
+    class Config:
+        from_attributes = True
+
+# Para criar um pacote novo (Admin Interno)
+class PackageCreate(BaseModel):
+    code: str
+    name: str
+    description: str
+    km: float
+    price: float
+    features: List[str]
+    is_popular: bool = False
+    color_theme: str = "slate"

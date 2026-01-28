@@ -14,6 +14,7 @@ from app.deps_staff import get_current_staff
 from app.constants.pricing import PRICE_PER_KM_ADHOC
 from app.constants.offer_types import OFFER_TYPE_METADATA
 from app.services.storage import upload_image  # Certifique-se que esta função existe no seu projeto
+from app.services.finance import process_transaction
 
 # Models e Schemas
 from app.models import Offer, OfferTarget, Restaurant, Client, OfferType
@@ -263,7 +264,9 @@ async def create_offer(
         raise HTTPException(400, "Restaurante sem localização cadastrada.")
 
     # --- 3. Calcular Audiência ---
-    radius_meters = (payload.radius_km or 25) * 1000
+    radius_km = payload.radius_km or 25 # Default 25km
+    radius_meters = radius_km * 1000
+    
     stmt_count = select(func.count(Client.id)).where(
         ST_DWithin(Client.geog, restaurant_geog, radius_meters)
     )
@@ -271,22 +274,23 @@ async def create_offer(
     audience_estimate = result_count.scalar() or 0
 
     # --- 4. Criar Objeto ---
-    initial_status = "CREATED" if start_time <= now else "SCHEDULED"
+    # AJUSTE: Forçamos o status inicial para 'CREATED' (Rascunho)
+    # Isso obriga a chamar o endpoint /publish para efetivar o débito financeiro.
+    initial_status = "CREATED" 
     
     offer_type_val = payload.offer_type.value if hasattr(payload.offer_type, 'value') else payload.offer_type
 
-    # Nota: payload.offer_image_url deve vir do Schema CreateOfferRequest
     new_offer = Offer(
         restaurant_id=rid,
         staff_id=staff_id,
         title=payload.title,
         description=payload.message,
-        offer_image_url=payload.offer_image_url, # <--- NOVO CAMPO
+        offer_image_url=payload.offer_image_url,
         start_at=start_time,
         end_at=end_time,
         offer_type=offer_type_val,
         status=initial_status,
-        radius_km=payload.radius_km,
+        radius_km=radius_km,
         placement=payload.placement,
         price_cents=payload.price_cents or 0,
         original_price_cents=payload.original_price_cents or 0,
@@ -377,7 +381,6 @@ async def get_offer_types(staff: dict = Depends(get_current_staff)):
         })
     return response
 
-# --- ENDPOINT 6: PUBLICAR ---
 @router.post("/{offer_id}/publish", response_model=CreateOfferResponse)
 async def publish_offer(
     offer_id: int,
@@ -388,14 +391,11 @@ async def publish_offer(
     logged_rid = int(staff["restaurant_id"])
     rid = logged_rid
 
-    # Lógica Super Admin
     if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
         rid = x_restaurant_id
 
-    stmt = select(Offer).where(
-        Offer.id == offer_id,
-        Offer.restaurant_id == rid
-    )
+    # Buscar Oferta e Restaurante
+    stmt = select(Offer).where(Offer.id == offer_id, Offer.restaurant_id == rid)
     result = await db.execute(stmt)
     offer = result.scalar_one_or_none()
 
@@ -405,35 +405,46 @@ async def publish_offer(
     if offer.status != "CREATED":
         raise HTTPException(400, "Apenas ofertas com status 'CREATED' podem ser publicadas.")
 
-    stmt_rest = select(Restaurant).where(Restaurant.id == offer.restaurant_id)
-    res_rest = await db.execute(stmt_rest)
-    restaurant = res_rest.scalar_one_or_none()
+    # --- LÓGICA DE DÉBITO FINANCEIRO ---
+    # 1. Definir o custo em KM (Regra: 100 KM por 1km de raio, por exemplo)
+    # Você pode ajustar essa regra de acordo com o app.constants.pricing
+    radius_val = offer.radius_km or 25
+    
+    try:
+        # 2. Chamar o Service Financeiro (Isso garante lock, histórico e validação)
+        # Note o sinal NEGATIVO (-) para indicar débito (saída)
+        transaction = await process_transaction(
+            db=db,
+            restaurant_id=rid,
+            amount=radius_val*-1, # Débito em KM
+            value=0, # Sem valor monetário na publicação, consome crédito
+            description_data={
+                "offer_id": offer.id,
+                "action": "PUBLISH_OFFER",
+                "radius_km": radius_val
+            }
+        )
+    except HTTPException as e:
+        # Repassa o erro de saldo insuficiente (400) para o front
+        raise e
+    except Exception as e:
+        print(f"Erro financeiro: {e}")
+        raise HTTPException(500, "Erro ao processar débito da oferta.")
 
-    if not restaurant:
-        raise HTTPException(404, "Restaurante não encontrado.")
-
-    # COBRANÇA
-    radius_needed = int(offer.radius_km or 20)
-    cost_in_money = 0.0
-    payment_method = "CREDITS"
-
-    if restaurant.balance_km >= radius_needed:
-        restaurant.balance_km -= radius_needed
-        payment_method = "CREDITS"
-        cost_in_money = 0.0
-    else:
-        payment_method = "PAY_AS_YOU_GO"
-        cost_in_money = radius_needed * PRICE_PER_KM_ADHOC
-
-    offer.payment_method = payment_method
-    offer.cost_amount = cost_in_money
-
-    # ATUALIZAR STATUS
+    # --- ATUALIZAR STATUS DA OFERTA ---
     now = datetime.now(timezone.utc)
+    
+    # Se a data de início é futuro, vira SCHEDULED. Se é passado/agora, vira ACTIVE.
     new_status = "ACTIVE" if offer.start_at <= now else "SCHEDULED"
+    
     offer.status = new_status
-    offer.start_at = now 
+    # offer.start_at = now # REMOVIDO: Respeita o agendamento se foi criado no futuro
     offer.updated_at = now
+    
+    # Salvar custo na oferta para referência rápida
+    offer.cost_amount = 0 # Custo monetário direto é 0 (foi crédito)
+    # Você pode criar uma coluna 'cost_km' na tabela Offer se quiser salvar quanto custou em KM
+    
     await db.commit()
     await db.refresh(offer)
 
@@ -443,51 +454,9 @@ async def publish_offer(
         offer_type=offer.offer_type,
         placement=offer.placement,
         radius_km=offer.radius_km,
-        price_cents=int(offer.cost_amount * 100), 
+        price_cents=int(offer.price_cents), 
         audience_estimate=offer.audience_estimate,
         status=offer.status,
         start_at=offer.start_at,
         end_at=offer.end_at
     )
-
-@router.get("/audience-estimation")
-async def get_audience_estimation(
-    radius_km: float = Query(..., ge=0.1, le=50), # Validação básica (min 100m, max 50km)
-    db: AsyncSession = Depends(get_db_session),
-    staff: dict = Depends(get_current_staff),
-    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
-):
-    logged_rid = int(staff["restaurant_id"])
-    rid = logged_rid
-
-    # Lógica Super Admin
-    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
-        rid = x_restaurant_id
-    """
-    Calcula quantos usuários estão dentro do raio especificado a partir do restaurante.
-    """
-    # 1. Buscar localização do Restaurante
-    stmt_rest = select(Restaurant.geog).where(Restaurant.id == rid)
-    result_rest = await db.execute(stmt_rest)
-    restaurant_geog = result_rest.scalars().first()
-
-    if not restaurant_geog:
-        # Se o restaurante não tem lat/long configurado, a estimativa é 0
-        return {"estimated_audience": 0, "radius_km": radius_km}
-
-    # 2. Converter Km para Metros (PostGIS usa metros para Geography)
-    radius_meters = radius_km * 1000
-
-    # 3. Contar Usuários na área (Query Espacial)
-    stmt_count = select(func.count(Client.id)).where(
-        ST_DWithin(Client.geog, restaurant_geog, radius_meters)
-    )
-    
-    result_count = await db.execute(stmt_count)
-    count = result_count.scalar() or 0
-
-    return {
-        "estimated_audience": count,
-        "radius_km": radius_km,
-        "center_point": "Restaurante"
-    }

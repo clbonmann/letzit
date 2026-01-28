@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str | None = None
     CELERY_RESULT_BACKEND: str | None = None
 
+    # Stripe
+    STRIPE_API_KEY: Optional[str] = None
+    STRIPE_WEBHOOK_SECRET: Optional[str] = None
+
     @property
     def celery_broker(self) -> str:
         return self.CELERY_BROKER_URL or self.REDIS_URL
