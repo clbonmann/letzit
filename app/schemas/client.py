@@ -4,7 +4,7 @@ from pydantic import BaseModel, EmailStr, Field
 from geopy.geocoders import Nominatim
 
 # Inicializa o geolocator (Defina um user_agent único)
-geolocator = Nominatim(user_agent="letzit_delivery_app_v1")
+geolocator = Nominatim(user_agent="letzit_delivery_app_v1", timeout=10)
 
 def get_address_from_coords(lat, lon):
     try:

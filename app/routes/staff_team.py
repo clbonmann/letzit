@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
 # Imports Locais
+from app import db
+from app import db
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
 from app.emails.staff_invite import build_staff_invite_email
@@ -72,10 +74,20 @@ async def invite_team_member(
         raise HTTPException(403, "Você não pode criar Super Admins.")
 
     # 1. Check Duplicidade
-    stmt_check = select(RestaurantStaff, Restaurant.name.label("restaurant_name")).join(Restaurant, RestaurantStaff.restaurant_id == Restaurant.id).where(RestaurantStaff.email == payload.email.lower())
-    row = (await db.execute(stmt_check)).scalar_one_or_none()
-    if row:
-        raise HTTPException(409, "Este e-mail já está cadastrado.")
+    stmt_check = select(RestaurantStaff).where(RestaurantStaff.email == payload.email.lower())
+    existing_user = (await db.execute(stmt_check)).scalars().first()
+
+    if existing_user:
+        raise HTTPException(status_code=409, detail="Este e-mail já está cadastrado.")
+
+    # 2. BUSCAR O NOME DO RESTAURANTE (Para usar no e-mail)
+    # Como estamos criando um usuário novo, precisamos saber o nome do restaurante atual (target_rid)
+    stmt_rest = select(Restaurant.name).where(Restaurant.id == target_rid)
+    restaurant_name = (await db.execute(stmt_rest)).scalar()
+    
+    # Caso raro: ID do restaurante inválido
+    if not restaurant_name:
+        raise HTTPException(404, "Restaurante não encontrado.")
 
     # 2. Prepara Dados
     token = str(uuid4())
@@ -91,13 +103,13 @@ async def invite_team_member(
         activation_token=token,
         activation_expires_at=expires,
         created_at=datetime.now(timezone.utc)
-    )
-    rest_name = row.restaurant_name
+    )  
+    
     try:
         db.add(new_staff)
         await db.commit()
         await db.refresh(new_staff)
-        await send_invite_email(new_staff.name, rest_name, new_staff.email, token)
+        await send_invite_email(new_staff.name, restaurant_name, new_staff.email, token)
         return new_staff
 
     except IntegrityError:
