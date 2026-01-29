@@ -360,9 +360,14 @@ class PackageCreate(BaseModel):
 
 # 1. Financeiro (Já tínhamos)
 class DashboardFinanceStats(BaseModel):
-    balance_km: float
+    balance_km: int = 0
     avg_cost_per_km: float
     stock_value_reais: float
+    total_credit: int = 0
+    total_debit: int = 0
+    total_cost: float = 0.0
+    total_purchase: float = 0.0
+    total_balance: float = 0.0
 
 # 2. Funil de Vendas e Operação (Já tínhamos)
 class DashboardFunnelStats(BaseModel):
@@ -374,6 +379,7 @@ class DashboardFunnelStats(BaseModel):
     today_cancelled: int
     today_conversion_rate: float
     today_cancellation_rate: float
+
 
 # 3. NOVO: Métricas de Engajamento (Médias dos últimos 30 dias)
 class EngagementStats(BaseModel):
@@ -388,6 +394,7 @@ class EngagementStats(BaseModel):
     avg_distance_km: float       # Distância média do alvo
     best_placement: str | None   # "NORMAL" ou "CITY_HOME"
     best_offer_type: str | None  # Ex: "DISCOUNT_OVER_BILL"
+    cost_over_aquistion: float  # Custo médio por cliente alcançado
 
 # 4. NOVO: Ciclo de Tempo (Médias em Minutos)
 class TimeCycleStats(BaseModel):

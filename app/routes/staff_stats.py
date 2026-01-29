@@ -23,7 +23,8 @@ router = APIRouter(prefix="/staff/stats", tags=["staff-stats"])
 
 @router.get("/dashboard", response_model=DashboardStatsResponse)
 async def get_dashboard_stats(
-    days_window: int = Query(30, description="Janela de análise histórica"),
+    # MUDANÇA: Aceitamos uma string 'range' em vez de 'days_window'
+    range_option: str = Query("30d", alias="range", description="7d, 30d, 60d, 90d, ytd, mtd, wtd, all"),
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
     x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
@@ -31,32 +32,67 @@ async def get_dashboard_stats(
     logged_rid = int(staff["restaurant_id"])
     rid = logged_rid
 
-    # Lógica Super Admin
     if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
         rid = x_restaurant_id
         
     now = datetime.now(timezone.utc)
     start_of_today = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-    historical_start = now - timedelta(days=days_window)
+    
+    # LÓGICA DE DATA DINÂMICA
+    historical_start = now - timedelta(days=30) # Default
 
+    opt = range_option.lower()
+    
+    if opt == "7d":
+        historical_start = now - timedelta(days=7)
+    elif opt == "30d":
+        historical_start = now - timedelta(days=30)
+    elif opt == "60d":
+        historical_start = now - timedelta(days=60)
+    elif opt == "90d":
+        historical_start = now - timedelta(days=90)
+    elif opt == "wtd":
+        # Começo da semana (Segunda-feira = 0)
+        historical_start = start_of_today - timedelta(days=start_of_today.weekday())
+    elif opt == "mtd":
+        # Começo do mês atual
+        historical_start = start_of_today.replace(day=1)
+    elif opt == "ytd":
+        # Começo do ano atual
+        historical_start = start_of_today.replace(month=1, day=1)
+    elif opt == "all":
+        # Data muito antiga (Início da operação)
+        historical_start = datetime(2020, 1, 1, tzinfo=timezone.utc)
     # ==========================================================================
     # 1. FINANCEIRO (Ledger)
     # ==========================================================================
-    stmt_ledger = (
-        select(RestaurantAccount)
-        .where(RestaurantAccount.restaurant_id == rid)
-        .order_by(desc(RestaurantAccount.id))
-        .limit(1)
-    )
-    last_entry = (await db.execute(stmt_ledger)).scalar_one_or_none()
-    
-    balance_km = last_entry.balance_km if last_entry else 0.0
-    avg_cost_reais = (last_entry.cost_km_cents / 100.0) if (last_entry and last_entry.cost_km_cents) else 0.0
-    
+    finance_query = text("""
+      SELECT 
+        sum(credit) FILTER (WHERE date_of_bte >= :hist_start)::int as total_credit, 
+        sum(debit) FILTER (WHERE date_of_bte >= :hist_start)::int as total_debit, 
+        sum(balance_km) FILTER (WHERE is_current = TRUE)::int as balance_km,
+        sum(debit*cost_km_cents) FILTER (WHERE date_of_bte >= :hist_start)::float/100 as total_cost,
+        sum(cost_package_cents) FILTER (WHERE date_of_bte >= :hist_start)::float/100 as total_purchase,
+        sum(balance_km*cost_km_cents) FILTER (WHERE date_of_bte >= :hist_start and is_current = TRUE)::float/100 as total_balance,
+        max(cost_km_cents) filter (where is_current = TRUE)::float/100 as cost_km_cents_current
+        FROM restaurant_account 
+        where restaurant_id = :rid ;
+    """)
+
+    last_entry = (await db.execute(finance_query, {
+        "rid": rid, 
+        "hist_start": historical_start
+    })).mappings().first()
+   
     finance_stats = DashboardFinanceStats(
-        balance_km=balance_km,
-        avg_cost_per_km=avg_cost_reais,
-        stock_value_reais=balance_km * avg_cost_reais
+        balance_km=last_entry.balance_km if last_entry else 0,
+        avg_cost_per_km=last_entry.cost_km_cents_current if last_entry else 0.0,
+        stock_value_reais=last_entry.total_balance if last_entry else 0.0,
+        total_credit=last_entry.total_credit or 0,
+        total_debit=last_entry.total_debit or 0,
+        total_cost=last_entry.total_cost or 0.0,
+        total_purchase=last_entry.total_purchase or 0.0,
+        total_balance=last_entry.total_balance or 0.0
     )
 
     # ==========================================================================
@@ -141,7 +177,8 @@ async def get_dashboard_stats(
         total_cancellation_rate=(kpi.total_cancelled or 0) / (kpi.total_accepted or 1) * 100 if (kpi.total_accepted or 0) > 0 else 0.0,
         avg_distance_km=round(float(kpi.avg_dist or 0) / 1000.0, 1), 
         best_placement=best_placement,
-        best_offer_type=best_type
+        best_offer_type=best_type,
+        cost_over_aquistion= (last_entry.total_cost or 0) / kpi.total_redeemed if kpi.total_redeemed > 0 else 0.0
     )
 
     cycle_stats = TimeCycleStats(
