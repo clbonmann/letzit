@@ -3,11 +3,13 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 import traceback
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Header
-from sqlalchemy import insert, text, select, func
+from shapely import Geometry
+from geoalchemy2.shape import from_shape
+from sqlalchemy import insert, text, select, func, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2.functions import ST_DWithin
-from enum import Enum
-
+from geoalchemy2.shape import from_shape, to_shape # Importações para conversão de geometrias
+from geoalchemy2 import Geometry as GAGeometry
 # Imports do App
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
@@ -149,6 +151,61 @@ async def list_staff_offers(
     
     return result
 
+@router.get("/audience-estimation")
+async def estimate_audience(
+    radius_km: int = Query(..., ge=1, le=100, description="Raio em KM"),
+    db: AsyncSession = Depends(get_db_session),
+    staff: dict = Depends(get_current_staff),
+    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
+):
+    logged_rid = int(staff["restaurant_id"])
+    rid = logged_rid
+
+    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
+        rid = x_restaurant_id
+
+    # 1. Busca Localização do Restaurante
+    stmt_rest = select(Restaurant.geog).where(Restaurant.id == rid)
+    restaurant_geog = (await db.execute(stmt_rest)).scalar_one_or_none()
+
+    if not restaurant_geog:
+        return {"radius_km": radius_km, "estimated_audience": 0, "points": []}
+
+    # --- CORREÇÃO AQUI ---
+    # 1. to_shape: Converte o WKBElement do banco para um objeto Shapely (Python)
+    # 2. from_shape: Converte o objeto Shapely de volta para um Elemento SQL com SRID correto
+    # Isso resolve o conflito de tipos entre GeoAlchemy2 e Asyncpg
+    shapely_geom = to_shape(restaurant_geog)
+    restaurant_geo_element = from_shape(shapely_geom, srid=4326)
+
+    # 2. Converte KM para Metros
+    radius_meters = radius_km * 1000
+
+    # 3. Filtros
+    filters = [
+        ST_DWithin(Client.geog, restaurant_geo_element, radius_meters),
+        Client.is_blocked == False,
+        Client.geog.is_not(None),
+        Client.last_loc_at >= func.now() - text("INTERVAL '30 days'") 
+    ]
+
+    # 4. Contagem Total
+    count = (await db.execute(select(func.count(Client.id)).where(*filters))).scalar() or 0
+
+    # 5. Amostra de Pontos (Limitado a 100)
+    stmt_points = select(
+        func.ST_Y(cast(Client.geog, GAGeometry)).label("lat"),
+        func.ST_X(cast(Client.geog, GAGeometry)).label("lng")
+    ).where(*filters).limit(100)
+
+    points_rows = (await db.execute(stmt_points)).all()
+    real_points = [{"lat": row.lat, "lng": row.lng} for row in points_rows]
+
+    return {
+        "radius_km": radius_km,
+        "estimated_audience": count,
+        "points": real_points
+    }
 # --- ENDPOINT 2: COTAÇÃO ---
 @router.post("/quote", response_model=QuoteResponse)
 async def quote_offer(
