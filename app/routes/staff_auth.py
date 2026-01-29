@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db_session
 from app.deps_staff import get_current_staff # Ajuste se o nome do arquivo for deps_staff
 from app.security import verify_password, create_access_token, get_password_hash # Ajuste seus imports de segurança
-from app.models import RestaurantStaff # Importante: Importar o Model do Banco
+from app.models import StoreStaff # Importante: Importar o Model do Banco
 
 # Imports dos Schemas (Pydantic)
 from app.schemas.staff import (
@@ -33,8 +33,8 @@ async def login(
     db: AsyncSession = Depends(get_db_session)
 ):
     # Busca o usuário pelo email (case insensitive)
-    stmt = select(RestaurantStaff).where(
-        RestaurantStaff.email == payload.email.lower()
+    stmt = select(StoreStaff).where(
+        StoreStaff.email == payload.email.lower()
     )
     result = await db.execute(stmt)
     staff = result.scalar_one_or_none()
@@ -57,7 +57,7 @@ async def login(
         subject=str(staff.id), 
         extra_claims={
             "role": staff.role, 
-            "rid": int(staff.restaurant_id),
+            "rid": int(staff.store_id),
             "staff_id": int(staff.id)
         }
     )
@@ -67,7 +67,7 @@ async def login(
         staff_id=staff.id, 
         name=staff.name or "", 
         role=staff.role, 
-        restaurant_id=staff.restaurant_id
+        store_id=staff.store_id
     )
 
 # ==============================================================================
@@ -78,7 +78,7 @@ async def get_me(staff: dict = Depends(get_current_staff)):
     # O middleware get_current_staff já decodificou o token
     return StaffMeResponse(
         id=int(staff["id"]), # Garante que usa o ID do payload do token
-        restaurant_id=int(staff["restaurant_id"]),
+        store_id=int(staff["store_id"]),
         email=staff["email"],
         role=staff.get("role", ""),
         name=staff.get("name", "")
@@ -93,7 +93,7 @@ async def preview_activation(
     db: AsyncSession = Depends(get_db_session)
 ):
     # Busca pelo token
-    stmt = select(RestaurantStaff).where(RestaurantStaff.activation_token == str(token))
+    stmt = select(StoreStaff).where(StoreStaff.activation_token == str(token))
     result = await db.execute(stmt)
     staff_user = result.scalar_one_or_none()
 
@@ -122,8 +122,8 @@ async def activate_account(
     db: AsyncSession = Depends(get_db_session)
 ):
     # Busca pelo token novamente (segurança dupla)
-    stmt = select(RestaurantStaff).where(
-        RestaurantStaff.activation_token == str(payload.token)
+    stmt = select(StoreStaff).where(
+        StoreStaff.activation_token == str(payload.token)
     )
     result = await db.execute(stmt)
     staff_user = result.scalar_one_or_none()
@@ -163,8 +163,8 @@ async def change_own_password(
     current_staff: dict = Depends(get_current_staff)
 ):
     # Busca o usuário no banco para pegar o hash atual
-    stmt = select(RestaurantStaff).where(
-        RestaurantStaff.id == int(current_staff["id"])
+    stmt = select(StoreStaff).where(
+        StoreStaff.id == int(current_staff["id"])
     )
     result = await db.execute(stmt)
     staff_user = result.scalar_one_or_none()

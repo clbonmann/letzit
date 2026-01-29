@@ -19,7 +19,7 @@ from app.services.storage import upload_image  # Certifique-se que esta função
 from app.services.finance import process_transaction
 
 # Models e Schemas
-from app.models import Offer, OfferTarget, Restaurant, Client, OfferType
+from app.models import Offer, OfferTarget, Store, Client, OfferType
 from app.schemas.staff import (
     QuoteRequest, QuoteResponse, CreateOfferRequest, CreateOfferResponse,
     CloseOfferResponse
@@ -38,14 +38,14 @@ def _utc_day_window(now: datetime) -> tuple: return datetime(now.year, now.month
 async def upload_offer_image(
     files: List[UploadFile] = File(...), 
     staff: dict = Depends(get_current_staff),
-    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
+    x_store_id: int | None = Header(default=None, alias="x-store-id"),
 ):
-    logged_rid = int(staff["restaurant_id"])
-    restaurant_id = logged_rid
+    logged_rid = int(staff["store_id"])
+    store_id = logged_rid
 
     # Lógica Super Admin
-    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
-        restaurant_id = x_restaurant_id
+    if staff.get("role") == "INTERNAL_ADMIN" and x_store_id:
+        store_id = x_store_id
         
     new_urls = []
 
@@ -68,7 +68,7 @@ async def upload_offer_image(
             # Sua função upload_image deve saber lidar com o wrapper do FastAPI.
             url = upload_image(
                 file, 
-                folder=f"restaurants/{restaurant_id}/offers/",
+                folder=f"stores/{store_id}/offers/",
                 transformation=transformations 
             )
             
@@ -90,14 +90,14 @@ async def list_staff_offers(
     limit: int = Query(50), 
     db: AsyncSession = Depends(get_db_session), 
     staff: dict = Depends(get_current_staff),
-    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
+    x_store_id: int | None = Header(default=None, alias="x-store-id"),
 ):
-    logged_rid = int(staff["restaurant_id"])
-    restaurant_id = logged_rid
+    logged_rid = int(staff["store_id"])
+    store_id = logged_rid
 
     # Lógica Super Admin
-    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
-        restaurant_id = x_restaurant_id
+    if staff.get("role") == "INTERNAL_ADMIN" and x_store_id:
+        store_id = x_store_id
 
     """
     Lista ofertas. Se 'offer_id' for informado, retorna apenas aquela oferta.
@@ -125,10 +125,10 @@ async def list_staff_offers(
             COUNT(c.id) FILTER (WHERE c.status='NO_SHOW')::int AS no_show_count 
         FROM offers o 
         LEFT JOIN offer_claims c ON c.offer_id = o.id 
-        WHERE o.restaurant_id = :rid
+        WHERE o.store_id = :rid
     """
     
-    params = {"rid": restaurant_id, "limit": limit}
+    params = {"rid": store_id, "limit": limit}
     
     # --- FILTROS DINÂMICOS ---
     
@@ -156,34 +156,34 @@ async def estimate_audience(
     radius_km: int = Query(..., ge=1, le=100, description="Raio em KM"),
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
-    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
+    x_store_id: int | None = Header(default=None, alias="x-store-id"),
 ):
-    logged_rid = int(staff["restaurant_id"])
+    logged_rid = int(staff["store_id"])
     rid = logged_rid
 
-    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
-        rid = x_restaurant_id
+    if staff.get("role") == "INTERNAL_ADMIN" and x_store_id:
+        rid = x_store_id
 
-    # 1. Busca Localização do Restaurante
-    stmt_rest = select(Restaurant.geog).where(Restaurant.id == rid)
-    restaurant_geog = (await db.execute(stmt_rest)).scalar_one_or_none()
+    # 1. Busca Localização do estabelecimento
+    stmt_rest = select(Store.geog).where(Store.id == rid)
+    store_geog = (await db.execute(stmt_rest)).scalar_one_or_none()
 
-    if not restaurant_geog:
+    if not store_geog:
         return {"radius_km": radius_km, "estimated_audience": 0, "points": []}
 
     # --- CORREÇÃO AQUI ---
     # 1. to_shape: Converte o WKBElement do banco para um objeto Shapely (Python)
     # 2. from_shape: Converte o objeto Shapely de volta para um Elemento SQL com SRID correto
     # Isso resolve o conflito de tipos entre GeoAlchemy2 e Asyncpg
-    shapely_geom = to_shape(restaurant_geog)
-    restaurant_geo_element = from_shape(shapely_geom, srid=4326)
+    shapely_geom = to_shape(store_geog)
+    store_geo_element = from_shape(shapely_geom, srid=4326)
 
     # 2. Converte KM para Metros
     radius_meters = radius_km * 1000
 
     # 3. Filtros
     filters = [
-        ST_DWithin(Client.geog, restaurant_geo_element, radius_meters),
+        ST_DWithin(Client.geog, store_geo_element, radius_meters),
         Client.is_blocked == False,
         Client.geog.is_not(None),
         Client.last_loc_at >= func.now() - text("INTERVAL '30 days'") 
@@ -213,15 +213,15 @@ async def quote_offer(
     db: AsyncSession = Depends(get_db_session), 
     staff: dict = Depends(get_current_staff)
 ):
-    rid = int(staff["restaurant_id"])
+    rid = int(staff["store_id"])
 
-    # 1. Buscar Restaurante (Geo + Saldo de KM)
-    stmt_rest = select(Restaurant).where(Restaurant.id == rid)
+    # 1. Buscar estabelecimento (Geo + Saldo de KM)
+    stmt_rest = select(Store).where(Store.id == rid)
     result_rest = await db.execute(stmt_rest)
     rest = result_rest.scalar_one_or_none()
 
     if not rest or not rest.geog:
-        raise HTTPException(400, "Localização do restaurante inválida.")
+        raise HTTPException(400, "Localização do estabelecimento inválida.")
 
     # PLACEMENT "NORMAL"
     if payload.placement == "NORMAL":
@@ -287,14 +287,14 @@ async def create_offer(
     payload: CreateOfferRequest, 
     db: AsyncSession = Depends(get_db_session), 
     staff: dict = Depends(get_current_staff),
-    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
+    x_store_id: int | None = Header(default=None, alias="x-store-id"),
 ):
-    logged_rid = int(staff["restaurant_id"])
+    logged_rid = int(staff["store_id"])
     rid = logged_rid
 
     # Lógica Super Admin
-    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
-        rid = x_restaurant_id
+    if staff.get("role") == "INTERNAL_ADMIN" and x_store_id:
+        rid = x_store_id
 
     staff_id = int(staff["id"])
     now = datetime.now(timezone.utc)
@@ -313,19 +313,19 @@ async def create_offer(
         raise HTTPException(status_code=400, detail="A data de término deve ser posterior à data de início.")
 
     # --- 2. Busca Geolocation ---
-    stmt_rest = select(Restaurant.geog).where(Restaurant.id == rid)
+    stmt_rest = select(Store.geog).where(Store.id == rid)
     result_rest = await db.execute(stmt_rest)
-    restaurant_geog = result_rest.scalar_one_or_none()
+    store_geog = result_rest.scalar_one_or_none()
 
-    if not restaurant_geog:
-        raise HTTPException(400, "Restaurante sem localização cadastrada.")
+    if not store_geog:
+        raise HTTPException(400, "estabelecimento sem localização cadastrada.")
 
     # --- 3. Calcular Audiência ---
     radius_km = payload.radius_km or 25 # Default 25km
     radius_meters = radius_km * 1000
     
     stmt_count = select(func.count(Client.id)).where(
-        ST_DWithin(Client.geog, restaurant_geog, radius_meters)
+        ST_DWithin(Client.geog, store_geog, radius_meters)
     )
     result_count = await db.execute(stmt_count)
     audience_estimate = result_count.scalar() or 0
@@ -338,7 +338,7 @@ async def create_offer(
     offer_type_val = payload.offer_type.value if hasattr(payload.offer_type, 'value') else payload.offer_type
 
     new_offer = Offer(
-        restaurant_id=rid,
+        store_id=rid,
         staff_id=staff_id,
         title=payload.title,
         description=payload.message,
@@ -356,7 +356,7 @@ async def create_offer(
         audience_estimate=audience_estimate,
         created_at=now,
         updated_at=now,
-        geog=restaurant_geog
+        geog=store_geog
     )
 
     db.add(new_offer)
@@ -386,24 +386,24 @@ async def close_offer(
     offer_id: int, 
     db: AsyncSession = Depends(get_db_session), 
     staff: dict = Depends(get_current_staff),
-    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
+    x_store_id: int | None = Header(default=None, alias="x-store-id"),
 ):
-    logged_rid = int(staff["restaurant_id"])
+    logged_rid = int(staff["store_id"])
     rid = logged_rid
 
     # Lógica Super Admin
-    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
-        rid = x_restaurant_id
+    if staff.get("role") == "INTERNAL_ADMIN" and x_store_id:
+        rid = x_store_id
 
     stmt = select(Offer).where(
         Offer.id == offer_id,
-        Offer.restaurant_id == rid
+        Offer.store_id == rid
     )
     result = await db.execute(stmt)
     offer_obj = result.scalar_one_or_none()
 
     if not offer_obj:
-        raise HTTPException(404, "Oferta não encontrada ou não pertence ao seu restaurante.")
+        raise HTTPException(404, "Oferta não encontrada ou não pertence ao seu estabelecimento.")
 
     if offer_obj.status in ["CLOSED", "EXPIRED"]:
         raise HTTPException(400, "Oferta já fechada ou expirada.")
@@ -443,16 +443,16 @@ async def publish_offer(
     offer_id: int,
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
-    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
+    x_store_id: int | None = Header(default=None, alias="x-store-id"),
 ):
-    logged_rid = int(staff["restaurant_id"])
+    logged_rid = int(staff["store_id"])
     rid = logged_rid
 
-    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
-        rid = x_restaurant_id
+    if staff.get("role") == "INTERNAL_ADMIN" and x_store_id:
+        rid = x_store_id
 
-    # Buscar Oferta e Restaurante
-    stmt = select(Offer).where(Offer.id == offer_id, Offer.restaurant_id == rid)
+    # Buscar Oferta e estabelecimento
+    stmt = select(Offer).where(Offer.id == offer_id, Offer.store_id == rid)
     result = await db.execute(stmt)
     offer = result.scalar_one_or_none()
 
@@ -474,7 +474,7 @@ async def publish_offer(
         # Note o sinal NEGATIVO (-) para indicar débito (saída)
         transaction = await process_transaction(
             db=db,
-            restaurant_id=rid,
+            store_id=rid,
             amount=radius_val, # Débito em KM
             value=0.0, # Sem valor monetário na publicação, consome crédito
             description_data={

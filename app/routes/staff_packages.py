@@ -7,7 +7,7 @@ from typing import List
 from app import db
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
-from app.models import Restaurant, Packages
+from app.models import Store, Packages
 
 from app.schemas.staff import BuyPackageRequest, PackageResponse
 from app.services.finance import process_transaction 
@@ -33,17 +33,17 @@ async def buy_package(
     if not package.is_active:
         raise HTTPException(400, "Este pacote não está mais disponível para venda.")
     
-    rid = int(staff["restaurant_id"])
+    rid = int(staff["store_id"])
 
     # 2. PROCESSAR A TRANSAÇÃO FINANCEIRA
     # O service 'process_transaction' já cuida de:
-    # - Buscar o restaurante e travar a linha (lock)
+    # - Buscar o estabelecimento e travar a linha (lock)
     # - Somar o saldo anterior + novos créditos
     # - Criar o registro de histórico (Ledger)
     try:
         transaction = await process_transaction(
             db=db,
-            restaurant_id=rid,
+            store_id=rid,
             amount=package.km, # Pega o valor da coluna 'km' do banco
             value=package.price,
             description_data={

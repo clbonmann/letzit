@@ -31,7 +31,7 @@ async def calculate_client_scores_logic():
             # 2. Pega estatísticas de Avaliações (Reviews)
             reviews_sql = text("""
                 SELECT client_id, COUNT(*) as count_reviews
-                FROM restaurant_reviews
+                FROM store_reviews
                 GROUP BY client_id
             """)
             reviews_result = (await db.execute(reviews_sql)).mappings().all()

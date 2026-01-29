@@ -67,20 +67,20 @@ class Feature(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     groups = relationship("FeatureGroup", back_populates="features")
-    res_features = relationship("RestaurantFeature", back_populates="feature")
+    res_features = relationship("StoreFeature", back_populates="feature")
 
     __table_args__ = (
         UniqueConstraint("group_id", "slug", name="uq_feature_group_slug"),
     )
 
-class RestaurantFeature(Base):
-    __tablename__ = "restaurant_features"
+class StoreFeature(Base):
+    __tablename__ = "store_features"
 
-    restaurant_id = Column(BigInteger, ForeignKey("restaurants.id", ondelete="CASCADE"), primary_key=True)
+    store_id = Column(BigInteger, ForeignKey("stores.id", ondelete="CASCADE"), primary_key=True)
     feature_id = Column(BigInteger, ForeignKey("features.id"), primary_key=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    restaurant = relationship("Restaurant", back_populates="res_features")
+    store = relationship("Store", back_populates="res_features")
     feature = relationship("Feature", back_populates="res_features")
 
 # =========================
@@ -113,7 +113,7 @@ class Client(Base):
 
     stats = relationship("ClientStats", back_populates="client", uselist=False)
     claims = relationship("OfferClaim", back_populates="client")
-    reviews = relationship("RestaurantReview", back_populates="client")
+    reviews = relationship("StoreReview", back_populates="client")
     # RELAÇÃO COM MATCHMAKER
     targets = relationship("OfferTarget", back_populates="client")
 
@@ -129,10 +129,10 @@ class ClientStats(Base):
     client = relationship("Client", back_populates="stats")
 
 # =========================
-# RESTAURANTS
+# STORES
 # =========================
-class Restaurant(Base):
-    __tablename__ = "restaurants"
+class Store(Base):
+    __tablename__ = "stores"
 
     id = Column(BigInteger, primary_key=True)
     name = Column(String, nullable=False)
@@ -165,19 +165,20 @@ class Restaurant(Base):
     tripadvisor = Column(String, nullable=True)
     site = Column(String, nullable=True)
     whatsapp = Column(String, nullable=True)
+    Store_type_id = Column(Integer, nullable=False)
 
-    res_features = relationship("RestaurantFeature", back_populates="restaurant", cascade="all, delete-orphan")
-    offers = relationship("Offer", back_populates="restaurant")
-    staff = relationship("RestaurantStaff", back_populates="restaurant")
-    reviews = relationship("RestaurantReview", back_populates="restaurant")
-    account_history = relationship("RestaurantAccount", back_populates="restaurant")
-    targets = relationship("OfferTarget", back_populates="restaurant")
+    res_features = relationship("StoreFeature", back_populates="store", cascade="all, delete-orphan")
+    offers = relationship("Offer", back_populates="store")
+    staff = relationship("StoreStaff", back_populates="store")
+    reviews = relationship("StoreReview", back_populates="store")
+    account_history = relationship("StoreAccount", back_populates="store")
+    targets = relationship("OfferTarget", back_populates="store")
 
-class RestaurantStaff(Base):
-    __tablename__ = "restaurant_staff"
+class StoreStaff(Base):
+    __tablename__ = "store_staff"
 
     id = Column(BigInteger, primary_key=True)
-    restaurant_id = Column(BigInteger, ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False)
+    store_id = Column(BigInteger, ForeignKey("stores.id", ondelete="CASCADE"), nullable=False)
     name = Column(String, nullable=True)
     email = Column(String, nullable=False)
     password_hash = Column(String, nullable=True)
@@ -189,11 +190,11 @@ class RestaurantStaff(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=True)
 
-    restaurant = relationship("Restaurant", back_populates="staff")
+    store = relationship("Store", back_populates="staff")
 
     __table_args__ = (
-        UniqueConstraint("restaurant_id", "email", name="uq_restaurant_email"),
-        CheckConstraint("role IN ('INTERNAL_ADMIN','REST_ADMIN','REST_STAFF')", name="ck_restaurant_staff_role"),
+        UniqueConstraint("store_id", "email", name="uq_store_email"),
+        CheckConstraint("role IN ('INTERNAL_ADMIN','REST_ADMIN','REST_STAFF')", name="ck_store_staff_role"),
     )
 
 # =========================
@@ -203,7 +204,7 @@ class Offer(Base):
     __tablename__ = "offers"
 
     id = Column(BigInteger, primary_key=True)
-    restaurant_id = Column(BigInteger, ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False)
+    store_id = Column(BigInteger, ForeignKey("stores.id", ondelete="CASCADE"), nullable=False)
     staff_id = Column(BigInteger, nullable=False)
     title = Column(String, nullable=False)
     message = Column(String, nullable=True)
@@ -235,7 +236,7 @@ class Offer(Base):
     geog = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     offer_image_url = Column(String, nullable=True)
 
-    restaurant = relationship("Restaurant", back_populates="offers")
+    store = relationship("Store", back_populates="offers")
     targets = relationship("OfferTarget", back_populates="offer")
     claims = relationship("OfferClaim", back_populates="offer")
 
@@ -246,7 +247,7 @@ class OfferTarget(Base):
     __tablename__ = "offer_targets"
 
     offer_id = Column(BigInteger, ForeignKey("offers.id", ondelete="CASCADE"), primary_key=True)
-    restaurant_id = Column(BigInteger, ForeignKey("restaurants.id", ondelete="CASCADE"), primary_key=True)
+    store_id = Column(BigInteger, ForeignKey("stores.id", ondelete="CASCADE"), primary_key=True)
     client_id = Column(BigInteger, ForeignKey("clients.id", ondelete="CASCADE"), primary_key=True)
     batch_no = Column(Integer, nullable=False, default=1)
     state = Column(String, nullable=False, default="RELEASED")
@@ -265,7 +266,7 @@ class OfferTarget(Base):
 
     offer = relationship("Offer", back_populates="targets")
     client = relationship("Client", back_populates="targets")
-    restaurant = relationship("Restaurant", back_populates="targets")
+    store = relationship("Store", back_populates="targets")
     offer = relationship("Offer", back_populates="targets")
 
 # =========================
@@ -288,7 +289,7 @@ class OfferClaim(Base):
 
     offer = relationship("Offer", back_populates="claims")
     client = relationship("Client", back_populates="claims")
-    reviews = relationship("RestaurantReview", back_populates="claim", uselist=False)
+    reviews = relationship("StoreReview", back_populates="claim", uselist=False)
 
     __table_args__ = (
         UniqueConstraint("offer_id", "client_id", name="uq_offer_client"),
@@ -306,12 +307,12 @@ class ClientFirstAccess(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)   
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-class RestaurantReview(Base):
-    __tablename__ = "restaurant_reviews"
+class StoreReview(Base):
+    __tablename__ = "store_reviews"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     client_id = Column(BigInteger, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False)
-    restaurant_id = Column(BigInteger, ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False)
+    store_id = Column(BigInteger, ForeignKey("stores.id", ondelete="CASCADE"), nullable=False)
     offer_claim_id = Column(BigInteger, ForeignKey("offer_claims.id", ondelete="CASCADE"), nullable=False, unique=True)
     rating_food = Column(Integer, nullable=False)
     rating_drink = Column(Integer, nullable=False)
@@ -321,7 +322,7 @@ class RestaurantReview(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     client = relationship("Client", back_populates="reviews")
-    restaurant = relationship("Restaurant", back_populates="reviews")
+    store = relationship("Store", back_populates="reviews")
     claim = relationship("OfferClaim", back_populates="reviews")
 
     __table_args__ = (
@@ -330,11 +331,11 @@ class RestaurantReview(Base):
         CheckConstraint('rating_environment >= 1 AND rating_environment <= 5', name='check_rating_environment'),
     )
 
-class RestaurantAccount(Base):
-    __tablename__ = "restaurant_account"
+class StoreAccount(Base):
+    __tablename__ = "store_account"
 
     id = Column(Integer, primary_key=True, index=True)
-    restaurant_id = Column(Integer, ForeignKey("restaurants.id"), nullable=False)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False)
     
     # Movimentação
     credit = Column(Float, default=0.0) # Entradas (Pacotes, Estornos)
@@ -360,15 +361,16 @@ class RestaurantAccount(Base):
     reversed_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relacionamento (Opcional, ajuda em queries)
-    restaurant = relationship("Restaurant", back_populates="account_history")
+    store = relationship("Store", back_populates="account_history")
 
-# 1. Tabela de Grupos (Ex: Culinária, Restaurantes, Ofertas)
+# 1. Tabela de Grupos (Ex: Culinária, Storees, Ofertas)
 class FavouritesGroup(Base):
     __tablename__ = "favourites_group"
 
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String, unique=True, index=True, nullable=False) # Ex: "CUISINE_TYPE", "RESTAURANT"
     name = Column(String, nullable=False) # Ex: "Tipo de Culinária"
+    Store_type_id = Column(Integer, nullable=False)
     max_select = Column(Integer, default=1) # 0 = Ilimitado, 1 = Único, 3 = Top 3
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -432,3 +434,12 @@ class Packages(Base):
     
     # Visual (Opcional - guarda a cor do card, ex: "violet", "slate")
     color_theme = Column(String, default="slate")
+
+class StoreType(Base):
+    __tablename__ = "Store_types"
+
+    id = Column(Integer, primary_key=True, index=True)
+    description = Column(String, nullable=False)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

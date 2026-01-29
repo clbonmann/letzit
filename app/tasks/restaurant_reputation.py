@@ -23,29 +23,29 @@ elif raw_url.startswith("postgresql://") and "+asyncpg" not in raw_url:
 else:
     DATABASE_URL = raw_url
 
-async def _update_restaurant_reputation_logic():
+async def _update_store_reputation_logic():
     # Cria engine dedicada para a task (evita stale connections)
     engine = create_async_engine(DATABASE_URL, poolclass=NullPool)
     LocalSession = async_sessionmaker(engine, expire_on_commit=False)
    
     async with LocalSession() as db:
-        logger.info(f"Iniciando cálculo de reputação de restaurantes: {datetime.now()}")
+        logger.info(f"Iniciando cálculo de reputação de Estabelecimentos: {datetime.now()}")
 
         try:
             # Query otimizada:
-            # 1. Usa restaurant_reputation (nome correto da coluna)
+            # 1. Usa store_reputation (nome correto da coluna)
             # 2. Usa IS DISTINCT FROM para só atualizar se a nota mudou
             sql = text("""
-                UPDATE restaurants r
+                UPDATE stores r
                 SET reputation = sub.avg_total
                 FROM (
                     SELECT 
-                        restaurant_id, 
+                        store_id, 
                         ROUND(AVG(average_score)::numeric, 1) as avg_total
-                    FROM restaurant_reviews
-                    GROUP BY restaurant_id
+                    FROM store_reviews
+                    GROUP BY store_id
                 ) AS sub
-                WHERE r.id = sub.restaurant_id
+                WHERE r.id = sub.store_id
                   AND (r.reputation IS DISTINCT FROM sub.avg_total);
             """)
             
@@ -53,7 +53,7 @@ async def _update_restaurant_reputation_logic():
             result = await db.execute(sql)
             await db.commit()
             
-            logger.info(f"Sucesso: Reputação atualizada para {result.rowcount} restaurantes.")
+            logger.info(f"Sucesso: Reputação atualizada para {result.rowcount} Estabelecimentos.")
 
         except Exception as e:
             await db.rollback()
@@ -68,7 +68,7 @@ async def _update_restaurant_reputation_logic():
 # 3. A TAREFA DO CELERY
 # ---------------------------------------------------------
 # CORREÇÃO: Nome deve bater com o beat_schedule e usar shared_task
-@shared_task(name="app.tasks.restaurant_reputation.update_restaurant_reputation_task")
-def update_restaurant_reputation_task():
+@shared_task(name="app.tasks.store_reputation.update_store_reputation_task")
+def update_store_reputation_task():
     """Wrapper síncrono para o Celery"""
-    return asyncio.run(_update_restaurant_reputation_logic())
+    return asyncio.run(_update_store_reputation_logic())

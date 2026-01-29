@@ -17,11 +17,11 @@ class StaffLoginResponse(BaseModel):
     staff_id: int
     name: str
     role: str
-    restaurant_id: int
+    store_id: int
 
 class StaffMeResponse(BaseModel):
     id: int
-    restaurant_id: int
+    store_id: int
     email: str
     role: str
     name: str | None
@@ -42,7 +42,7 @@ class ChangePasswordRequest(BaseModel):
 # --- TEAM (Gestão de Equipe) ---
 class StaffUserResponse(BaseModel):
     id: int
-    restaurant_id: int
+    store_id: int
     email: str
     name: str | None
     role: str
@@ -63,7 +63,7 @@ class AdminResetPasswordRequest(BaseModel):
     new_password: str = Field(..., min_length=6)
     
 # --- RESTAURANT PROFILE ---
-class RestaurantRead(BaseModel):
+class StoreRead(BaseModel):
     id: int
     name: str
     cnpj: str | None = None
@@ -97,7 +97,7 @@ class RestaurantRead(BaseModel):
     class Config:
         from_attributes = True
 
-class RestaurantUpdate(BaseModel):
+class StoreUpdate(BaseModel):
     id: Optional[int] = None # Opcional para Staff, Obrigatório para Admin editar terceiros
     name: Optional[str] = None
     cnpj: Optional[str] = None
@@ -286,13 +286,13 @@ class TaxItem(BaseModel):
     name: str
 
 # Payload flexível: aceita qualquer string como chave (código do grupo)
-class RestaurantFeaturesUpdateRequest(BaseModel):
+class StoreFeaturesUpdateRequest(BaseModel):
     # Ex: {"CUISINE_TYPE": [1, 2], "NEW_GROUP": [10]}
     selections: Dict[str, List[int]] 
 
-class RestaurantFeaturesResponse(BaseModel):
-    restaurant_id: int
-    # Retorna o que o restaurante tem salvo, agrupado por código
+class StoreFeaturesResponse(BaseModel):
+    store_id: int
+    # Retorna o que o estabelecimento tem salvo, agrupado por código
     selections: Dict[str, List[int]]
 
 # Add this near TaxItem in app/schemas/staff.py
@@ -303,13 +303,13 @@ class TaxGroup(BaseModel):
     max_select: Optional[int] = None
     items: List[TaxItem]
 
-class RestaurantFeaturesUpdateResponse(BaseModel):
+class StoreFeaturesUpdateResponse(BaseModel):
     status: str
-    restaurant_id: int
+    store_id: int
     selections: Dict[str, List[int]]
 
  
-class RestaurantStatusUpdate(BaseModel):
+class StoreStatusUpdate(BaseModel):
     is_open: Optional[bool] = None
     working_hours: Optional[int] = Field(None, ge=1, le=24)
 

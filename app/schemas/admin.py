@@ -10,19 +10,19 @@ class CreateClientResponse(BaseModel):
     id: int
     phone_e164: str
 
-class CreateRestaurantRequest(BaseModel):
+class CreateStoreRequest(BaseModel):
     name: str
     cnpj: str
     admin_name: str
     admin_email: EmailStr
     role: str 
 
-class CreateRestaurantResponse(BaseModel):
+class CreateStoreResponse(BaseModel):
     id: int
     name: str
 
 class CreateOfferRequest(BaseModel):
-    restaurant_id: int
+    store_id: int
     title: str
     description: str | None = None
     end_at: datetime
@@ -43,7 +43,7 @@ class AddTargetsRequest(BaseModel):
     state: str = "RELEASED"
 
 class CreateStaffRequest(BaseModel):
-    restaurant_id: int
+    store_id: int
     email: EmailStr
     password: str
     role: str = "REST_ADMIN" # ou "INTERNAL_ADMIN", "REST_STAFF"

@@ -9,15 +9,15 @@ from pydantic import BaseModel
 
 from app.db import get_db_session, AsyncSessionLocal
 from app.deps_client import get_current_client_id   
-from app.models import Restaurant
+from app.models import Store
 
 # IMPORTANDO SCHEMAS
 from app.schemas.client import (
     AcceptOfferResponse, 
     PicksRequest, 
-    RestaurantsRequest, 
+    StoresRequest, 
     MobileFeaturesResponse, 
-    RestaurantDetailsResponse,
+    StoreDetailsResponse,
     ClientLocationUpdate,
     CancelOfferResponse)
 
@@ -41,8 +41,8 @@ async def mark_offers_as_viewed(uid: int, offer_ids: list, db_session_factory):
         )
         await db.commit()
 
-@router.get("/restaurants") # Ajuste o response_model conforme seu arquivo de schemas
-async def get_restaurants_list(
+@router.get("/stores") # Ajuste o response_model conforme seu arquivo de schemas
+async def get_stores_list(
     lat: float,
     lon: float,
     page: int = 1,
@@ -79,11 +79,11 @@ async def get_restaurants_list(
         where_clauses.append("""
             EXISTS (
                 SELECT 1 
-                FROM restaurant_features rf
+                FROM store_features rf
                 JOIN features f ON f.id = rf.feature_id
-                WHERE rf.restaurant_id = restaurants.id
+                WHERE rf.store_id = stores.id
                   AND f.slug = ANY(:feature_slugs::text[]) 
-                GROUP BY rf.restaurant_id
+                GROUP BY rf.store_id
                 HAVING COUNT(DISTINCT f.slug) = :feature_count
             )
         """)
@@ -120,16 +120,16 @@ async def get_restaurants_list(
             ST_X(r.geog::geometry) as lon,
             (
                 SELECT json_object_agg(f.slug, true)
-                FROM restaurant_features rf
+                FROM store_features rf
                 JOIN features f ON f.id = rf.feature_id
-                WHERE rf.restaurant_id = r.id
+                WHERE rf.store_id = r.id
                 AND f.is_active = true
             ) as features,
             
             -- Cálculo exato em metros
             ST_DistanceSphere(r.geog::geometry, ST_MakePoint(:lon, :lat)) as distance_meters
 
-        FROM restaurants r
+        FROM stores r
         WHERE {where_string}
         ORDER BY distance_meters ASC
         LIMIT :limit OFFSET :offset
@@ -164,8 +164,8 @@ async def get_picks(
     query_targets = text(f"""
         SELECT 
             o.id, 
-            o.restaurant_id, 
-            r.name AS restaurant_name, 
+            o.store_id, 
+            r.name AS store_name, 
             r.logo_url, 
             r.reputation,
             o.title, 
@@ -178,7 +178,7 @@ async def get_picks(
             o.placement
         FROM offer_targets t 
         JOIN offers o ON o.id = t.offer_id 
-        JOIN restaurants r ON r.id = o.restaurant_id
+        JOIN stores r ON r.id = o.store_id
         JOIN clients c ON c.id = t.client_id
         WHERE t.client_id = :uid 
           AND o.placement = :placement
@@ -205,28 +205,28 @@ async def get_picks(
 @router.get("/features")
 async def get_features_unified(
     # 2. 'Query(None)' torna o parâmetro opcional na URL.
-    # Se não enviar, restaurant_id será None.
-    restaurant_id: Optional[int] = Query(None, description="ID opcional do restaurante"),
+    # Se não enviar, store_id será None.
+    store_id: Optional[int] = Query(None, description="ID opcional do ESTABELECIMENTO"),
     
     # 3. Apenas sessão do banco. SEM dependência de usuário logado (uid).
     db: AsyncSession = Depends(get_db_session),
 ):
     """
-    Retorna filtros gerais (se sem ID) ou features de um restaurante (se com ID).
+    Retorna filtros gerais (se sem ID) ou features de um ESTABELECIMENTO (se com ID).
     Público: Não requer login.
     """
 
     # CASO A: Tem ID -> Retorna Dict {"features": {"wifi": true}}
-    if restaurant_id:
+    if store_id:
         query = text("""
             SELECT f.slug
-            FROM restaurant_features rf
+            FROM store_features rf
             JOIN features f ON f.id = rf.feature_id
-            WHERE rf.restaurant_id = :rid
+            WHERE rf.store_id = :rid
               AND f.is_active = true 
         """)
         
-        result = await db.execute(query, {"rid": restaurant_id})
+        result = await db.execute(query, {"rid": store_id})
         rows = result.scalars().all()
 
         features_map = {slug: True for slug in rows}
@@ -245,9 +245,9 @@ async def get_offers_map_source(db: AsyncSession = Depends(get_db_session)):
         SELECT json_build_object('type', 'FeatureCollection', 'features', json_agg(ST_AsGeoJSON(t.*)::json))
         FROM (
             SELECT ST_SetSRID(ST_MakePoint(ST_X(r.geog::geometry), ST_Y(r.geog::geometry)), 4326) as geometry,
-            json_build_object('offer_id', o.id, 'title', o.title, 'price_cents', o.price_cents, 'restaurant_name', r.name, 
+            json_build_object('offer_id', o.id, 'title', o.title, 'price_cents', o.price_cents, 'store_name', r.name, 
             'logo_url', r.logo_url, r.reputation, 'type', o.placement) as properties
-            FROM offers o JOIN restaurants r ON r.id = o.restaurant_id
+            FROM offers o JOIN stores r ON r.id = o.store_id
             WHERE o.status = 'ACTIVE' AND o.end_at > NOW() AND o.accepted_count < o.accept_limit
         ) as t;
     """)
@@ -258,9 +258,9 @@ async def get_offers_map_source(db: AsyncSession = Depends(get_db_session)):
 async def get_offer_details(offer_id: int, uid: int = Depends(get_current_client_id), db: AsyncSession = Depends(get_db_session)):
     query = text("""
         SELECT o.id, o.title, o.description, o.message, o.offer_image_url, o.price_cents, o.original_price_cents, 
-        o.end_at, o.placement, r.name as restaurant_name, r.logo_url, r.cover_image_url, r.address_street,
+        o.end_at, o.placement, r.name as store_name, r.logo_url, r.cover_image_url, r.address_street,
          r.address_number, r.phone, ST_Y(r.geog::geometry) as lat, ST_X(r.geog::geometry) as lon FROM offers o 
-        JOIN restaurants r ON r.id = o.restaurant_id WHERE o.id = :oid
+        JOIN stores r ON r.id = o.store_id WHERE o.id = :oid
     """)
     
     row = (await db.execute(query, {"oid": offer_id})).mappings().first()
@@ -375,12 +375,12 @@ async def get_my_claims(
             c.expires_at,
             c.status,
             o.title,
-            r.name as restaurant_name,
+            r.name as store_name,
             r.logo_url,
             r.reputation
         FROM offer_claims c
         JOIN offers o ON o.id = c.offer_id
-        JOIN restaurants r ON r.id = o.restaurant_id
+        JOIN stores r ON r.id = o.store_id
         WHERE c.client_id = :uid 
         AND c.status = 'ACCEPTED'
         AND c.expires_at > NOW()
@@ -412,13 +412,13 @@ async def register_offer_click(
     await db.commit()
     return {"status": "recorded"}
 
-@router.get("/restaurants/{restaurant_id}")
-async def get_restaurant_details(
-    restaurant_id: int,
+@router.get("/stores/{store_id}")
+async def get_store_details(
+    store_id: int,
     db: AsyncSession = Depends(get_db_session),
 ):
     """
-    Retorna os detalhes completos de um restaurante específico + suas features.
+    Retorna os detalhes completos de um ESTABELECIMENTO específico + suas features.
     """
     query = text("""
         SELECT 
@@ -446,24 +446,24 @@ async def get_restaurant_details(
             -- Subquery para montar as features: {"wifi": true, "parking": true}
             (
                 SELECT json_object_agg(f.slug, true)
-                FROM restaurant_features rf
+                FROM store_features rf
                 JOIN features f ON f.id = rf.feature_id
-                WHERE rf.restaurant_id = r.id
+                WHERE rf.store_id = r.id
                 AND f.is_active = true
             ) as features
 
-        FROM restaurants r
+        FROM stores r
         WHERE r.id = :rid 
           AND r.is_active = true
     """)
 
-    result = await db.execute(query, {"rid": restaurant_id})
-    restaurant = result.mappings().first()
+    result = await db.execute(query, {"rid": store_id})
+    store = result.mappings().first()
 
-    if not restaurant:
-        raise HTTPException(status_code=404, detail="Restaurante não encontrado ou inativo.")
+    if not store:
+        raise HTTPException(status_code=404, detail="ESTABELECIMENTO não encontrado ou inativo.")
 
-    return restaurant
+    return store
 
 from app.schemas.client import ClientLocationUpdate
 

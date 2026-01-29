@@ -5,10 +5,10 @@ from fastapi.security import OAuth2PasswordBearer
 # 1. Client Routes (App Mobile)
 from app.routes import client_auth, client_feed, client_profile
 
-# 2. Staff Routes (Painel Restaurante)
+# 2. Staff Routes (Painel Store)
 from app.routes import (
     staff_auth, 
-    staff_restaurant, 
+    staff_store, 
     staff_offers, 
     staff_team, 
     staff_pos, 
@@ -39,7 +39,7 @@ app.include_router(client_profile.router)
 
 # Staff
 app.include_router(staff_auth.router)
-app.include_router(staff_restaurant.router)
+app.include_router(staff_store.router)
 app.include_router(staff_offers.router)
 app.include_router(staff_team.router)
 app.include_router(staff_pos.router)

@@ -41,7 +41,7 @@ async def _execute_matchmaking_logic():
         offers_query = text("""
             SELECT 
                 id, 
-                restaurante_id,
+                store_id,
                 geog, 
                 radius_km, 
                 max_target_total, 
@@ -77,10 +77,10 @@ async def _execute_matchmaking_logic():
             
             # --- LÓGICA DE INSERT (A PESCARIA) ---
             fishing_query = text(f"""
-                INSERT INTO offer_targets (offer_id, restaurant_id, client_id, batch_no, state, geog_cli, geog_res, target_distance, created_at, expired_at, placement, released_at)
+                INSERT INTO offer_targets (offer_id, store_id, client_id, batch_no, state, geog_cli, geog_res, target_distance, created_at, expired_at, placement, released_at)
                 SELECT 
                     :oid,          -- offer_id
-                    :rid,          -- restaurant_id
+                    :rid,          -- store_id
                     c.id,          -- client_id
                     1,             -- batch_no
                     'RELEASED',    -- state inicial
@@ -114,7 +114,7 @@ async def _execute_matchmaking_logic():
             try:
                 result = await db.execute(fishing_query, {
                     "oid": offer.id,
-                    "rid": offer.restaurante_id,
+                    "rid": offer.store_id,
                     "created_at": offer.created_at,
                     "expired_at": offer.end_at,
                     "geog": offer.geog,

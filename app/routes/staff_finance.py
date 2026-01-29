@@ -5,7 +5,7 @@ from typing import List
 
 from app.db import get_db_session
 from app.deps_staff import get_current_staff # Sua dependência de auth
-from app.models import RestaurantAccount, Restaurant
+from app.models import StoreAccount, Store
 from app.schemas import AccountHistoryResponse, BalanceResponse
 
 # Importe o serviço que criamos acima
@@ -21,13 +21,13 @@ async def get_statement(
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff)
 ):
-    rest_id = int(staff["restaurant_id"])
+    rest_id = int(staff["store_id"])
     offset = (page - 1) * limit
 
     stmt = (
-        select(RestaurantAccount)
-        .where(RestaurantAccount.restaurant_id == rest_id)
-        .order_by(desc(RestaurantAccount.timestamp))
+        select(StoreAccount)
+        .where(StoreAccount.store_id == rest_id)
+        .order_by(desc(StoreAccount.timestamp))
         .offset(offset)
         .limit(limit)
     )
@@ -65,18 +65,18 @@ async def get_balance(
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff)
 ):
-    rest_id = int(staff["restaurant_id"])
+    rest_id = int(staff["store_id"])
     
-    stmt = select(Restaurant).where(Restaurant.id == rest_id)
+    stmt = select(Store).where(Store.id == rest_id)
     result = await db.execute(stmt)
-    restaurant = result.scalar_one_or_none()
+    store = result.scalar_one_or_none()
     
-    if not restaurant:
-        raise HTTPException(404, "Restaurante não encontrado")
+    if not store:
+        raise HTTPException(404, "Storee não encontrado")
         
     return {
-        "balance_km": restaurant.balance_km or 0.0,
-        "last_update": restaurant.updated_at # ou datetime.now()
+        "balance_km": store.balance_km or 0.0,
+        "last_update": store.updated_at # ou datetime.now()
     }
 
 # --- ROTA 3: BÔNUS MANUAL (Apenas para ADMIN INTERNO ou Testes) ---
@@ -96,13 +96,13 @@ async def manual_adjust(
     # Aqui você deve colocar uma proteção extra:
     # if staff["role"] != "INTERNAL_ADMIN": raise HTTPException(403)
     
-    rest_id = int(staff["restaurant_id"])
+    rest_id = int(staff["store_id"])
     
     try:
         # USA O SERVIÇO QUE CRIAMOS
         await process_transaction(
             db=db,
-            restaurant_id=rest_id,
+            store_id=rest_id,
             amount=payload.amount_km,
             description_data={"package_id": f"MANUAL: {payload.reason}"}
         )

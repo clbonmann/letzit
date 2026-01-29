@@ -1,30 +1,30 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select, update, desc
 from fastapi import HTTPException
-from app.models import Restaurant, RestaurantAccount
+from app.models import Store, StoreAccount
 
 async def process_transaction(
     db: AsyncSession,
-    restaurant_id: int,
+    store_id: int,
     amount: int, # Positivo = Compra (Entrada), Negativo = Gasto (Saída)
     value: float, # Valor pago em REAIS (Só usado se amount > 0)
     description_data: dict 
-) -> RestaurantAccount:
+) -> StoreAccount:
     
     amount = amount or 0
     # 1. LOCK (Trava de Segurança) 🔒
-    stmt_lock = select(Restaurant).where(Restaurant.id == restaurant_id).with_for_update()
+    stmt_lock = select(Store).where(Store.id == store_id).with_for_update()
     result_lock = await db.execute(stmt_lock)
-    restaurant = result_lock.scalar_one_or_none()
+    store = result_lock.scalar_one_or_none()
 
-    if not restaurant:
-        raise HTTPException(404, "Restaurante não encontrado.")
+    if not store:
+        raise HTTPException(404, "Estabelecimento não encontrado.")
 
     # 2. BUSCAR DADOS ANTERIORES
     stmt_last = (
-        select(RestaurantAccount)
-        .where(RestaurantAccount.restaurant_id == restaurant_id)
-        .order_by(desc(RestaurantAccount.id))
+        select(StoreAccount)
+        .where(StoreAccount.store_id == store_id)
+        .order_by(desc(StoreAccount.id))
         .limit(1)
     )
     result_last = await db.execute(stmt_last)
@@ -83,23 +83,23 @@ async def process_transaction(
             new_balance_cents = 0
 
     
-    # 4. Atualizar Tabela Mestra (Snapshot no Restaurante)
+    # 4. Atualizar Tabela Mestra (Snapshot no Estabelecimento)
     # (Opcional: converter cents de volta pra float/Reais pro usuário ver fácil, ou manter int)
-    restaurant.balance_km = new_balance_km
-    # restaurant.balance_current_value = new_balance_cents / 100.0 (Se tiver esse campo)
-    restaurant.updated_at = func.now()
+    store.balance_km = new_balance_km
+    # store.balance_current_value = new_balance_cents / 100.0 (Se tiver esse campo)
+    store.updated_at = func.now()
     
     # 5. Desativar flag 'is_current' antiga
     await db.execute(
-         update(RestaurantAccount)
-        .where(RestaurantAccount.restaurant_id == restaurant_id)
-        .where(RestaurantAccount.is_current == True)
+         update(StoreAccount)
+        .where(StoreAccount.store_id == store_id)
+        .where(StoreAccount.is_current == True)
         .values(is_current=False)
     )
 
     # 6. Criar Registro no Ledger
-    ledger_entry = RestaurantAccount(
-        restaurant_id=restaurant_id,
+    ledger_entry = StoreAccount(
+        store_id=store_id,
         
         credit=amount if amount > 0 else 0,
         debit=abs(amount) if amount < 0 else 0,

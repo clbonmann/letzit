@@ -11,7 +11,7 @@ celery_app = Celery(
     backend=REDIS_URL,
     include=[
         "app.tasks.matchmaker", 
-        "app.tasks.restaurant_reputation",
+        "app.tasks.store_reputation",
         "app.tasks.expired_offers",
         "app.tasks.client_scoring" # <--- Adicionado: Nível/Reputação do Cliente
     ]
@@ -33,9 +33,9 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute="*"),
     },
 
-    # 2. REPUTAÇÃO DO RESTAURANTE (Roda a cada 30 min)
-    'update-restaurant-reputation-30-min': {
-        'task': 'app.tasks.restaurant_reputation.update_restaurant_reputation_task',
+    # 2. REPUTAÇÃO DO ESTABELECIMENTO (Roda a cada 30 min)
+    'update-store-reputation-30-min': {
+        'task': 'app.tasks.store_reputation.update_store_reputation_task',
         'schedule': crontab(minute='*/30'),
     },
 

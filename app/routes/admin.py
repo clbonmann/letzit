@@ -10,7 +10,7 @@ from app.db import get_db_session
 # IMPORTANDO SCHEMAS
 from app.schemas.admin import (
     AddTargetsRequest, CreateOfferRequest, CreateOfferResponse,
-    CreateRestaurantRequest, CreateRestaurantResponse,
+    CreateStoreRequest, CreateStoreResponse,
     CreateClientRequest, CreateClientResponse, CreateStaffRequest
 )
 from app.services.email import send_invite_email
@@ -24,22 +24,22 @@ async def create_client(payload: CreateClientRequest, db: AsyncSession = Depends
     await db.commit()
     return CreateClientResponse(id=row.id, phone_e164=row.phone_e164)
 
-@router.post("/restaurants", response_model=CreateRestaurantResponse)
-async def create_restaurant(
-    payload: CreateRestaurantRequest, 
+@router.post("/stores", response_model=CreateStoreResponse)
+async def create_store(
+    payload: CreateStoreRequest, 
     db: AsyncSession = Depends(get_db_session)
 ):
-    # 1. CRIAR RESTAURANTE
+    # 1. CRIAR ESTABELECIMENTO
     # Inserimos e retornamos o ID imediatamente
     query_rest = text("""
-        INSERT INTO restaurants (name, cnpj, is_active) 
+        INSERT INTO stores (name, cnpj, is_active) 
         VALUES (:name, :cnpj, true) 
         RETURNING id, name
     """)
     row_rest = (await db.execute(query_rest, {"name": payload.name, "cnpj": payload.cnpj})).mappings().first()
     
-    restaurant_id = row_rest.id
-    restaurant_name = row_rest.name
+    store_id = row_rest.id
+    store_name = row_rest.name
     # 2. GERAR TOKEN DE CONVITE (UUID)
     invite_token = str(uuid.uuid4())
 
@@ -47,12 +47,12 @@ async def create_restaurant(
     # Importante: Salvamos o invite_token no banco para validar depois quando ele clicar no link
     # Supondo que sua tabela 'staff' ou 'users' tenha um campo 'invite_token' e 'status'
     query_user = text("""
-        INSERT INTO restaurant_staff (restaurant_id, name, email, role, is_active, activation_token)
+        INSERT INTO store_staff (store_id, name, email, role, is_active, activation_token)
         VALUES (:rest_id, :name, :email, :role, false, :token)
     """)
     
     await db.execute(query_user, {
-        "rest_id": restaurant_id,
+        "rest_id": store_id,
         "name": payload.admin_name,
         "email": payload.admin_email,
         "role": payload.role,
@@ -64,6 +64,6 @@ async def create_restaurant(
 
     # 5. ENVIAR O EMAIL (Background Task é melhor, mas await direto funciona pra testar)
     # Chamamos a função que você já criou
-    await send_invite_email(payload.admin_email, payload.admin_name, invite_token, restaurant_name)
+    await send_invite_email(payload.admin_email, payload.admin_name, invite_token, store_name)
 
-    return CreateRestaurantResponse(id=restaurant_id, name=restaurant_name)
+    return CreateStoreResponse(id=store_id, name=store_name)

@@ -15,13 +15,13 @@ os.environ["REQUESTS_CA_BUNDLE"] = real_cert_path
 # Configure a chave (adicione RESEND_API_KEY no .env e settings.py)
 resend.api_key = settings.RESEND_API_KEY
 
-async def send_invite_email(email: str, name: str, token: str, restaurant_name: str):
+async def send_invite_email(email: str, name: str, token: str, store_name: str):
     
     clean_email = str(email).strip().lower()
 
     subject, html_content = build_staff_invite_email(
         staff_name=name,
-        restaurant_name=restaurant_name,
+        store_name=store_name,
         staff_email=clean_email,
         token=token
     )

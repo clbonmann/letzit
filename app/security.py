@@ -37,7 +37,7 @@ def create_access_token(
     # 1. Cria o payload básico
     to_encode = {"exp": expire, "sub": str(subject)}
 
-    # 2. Se tiver dados extras (role, restaurant_id), adiciona no dicionário
+    # 2. Se tiver dados extras (role, store_id), adiciona no dicionário
     if extra_claims:
         to_encode.update(extra_claims)
 

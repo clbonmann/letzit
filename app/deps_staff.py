@@ -30,8 +30,8 @@ async def get_current_staff(
     # Busca no banco para garantir que staff ainda existe e está ativo
     staff = (await db.execute(
         text("""
-            SELECT id, restaurant_id, email, role, is_active, name
-            FROM restaurant_staff
+            SELECT id, store_id, email, role, is_active, name
+            FROM store_staff
             WHERE id = :sid
         """),
         {"sid": staff_id},

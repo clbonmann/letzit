@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
-from app.models import Restaurant, RestaurantAccount, Offer, OfferTarget, OfferClaim
+from app.models import Store, StoreAccount, Offer, OfferTarget, OfferClaim
 from app.schemas.staff import (
     DashboardStatsResponse,
     DashboardFinanceStats,
@@ -27,13 +27,13 @@ async def get_dashboard_stats(
     range_option: str = Query("30d", alias="range", description="7d, 30d, 60d, 90d, ytd, mtd, wtd, all"),
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
-    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
+    x_store_id: int | None = Header(default=None, alias="x-store-id"),
 ):
-    logged_rid = int(staff["restaurant_id"])
+    logged_rid = int(staff["store_id"])
     rid = logged_rid
 
-    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
-        rid = x_restaurant_id
+    if staff.get("role") == "INTERNAL_ADMIN" and x_store_id:
+        rid = x_store_id
         
     now = datetime.now(timezone.utc)
     start_of_today = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
@@ -75,8 +75,8 @@ async def get_dashboard_stats(
         sum(cost_package_cents) FILTER (WHERE date_of_bte >= :hist_start)::float/100 as total_purchase,
         sum(balance_km*cost_km_cents) FILTER (WHERE date_of_bte >= :hist_start and is_current = TRUE)::float/100 as total_balance,
         max(cost_km_cents) filter (where is_current = TRUE)::float/100 as cost_km_cents_current
-        FROM restaurant_account 
-        where restaurant_id = :rid ;
+        FROM store_account 
+        where store_id = :rid ;
     """)
 
     last_entry = (await db.execute(finance_query, {
@@ -128,7 +128,7 @@ async def get_dashboard_stats(
             -- Release -> Redeem
             AVG(EXTRACT(EPOCH FROM (ot.redeemed_at - ot.released_at))) FILTER (WHERE ot.redeemed_at > ot.released_at) as sec_to_redeem
         FROM offer_targets ot
-        WHERE ot.restaurant_id = :rid
+        WHERE ot.store_id = :rid
     """)
     
     kpi = (await db.execute(kpi_query, {
@@ -153,13 +153,13 @@ async def get_dashboard_stats(
     best_type_query = text("""
         SELECT o.offer_type 
         FROM offer_targets t JOIN offers o ON o.id = t.offer_id
-        WHERE o.restaurant_id = :rid AND t.accepted_at >= :hist_start
+        WHERE o.store_id = :rid AND t.accepted_at >= :hist_start
         GROUP BY o.offer_type ORDER BY COUNT(t.client_id) DESC LIMIT 1
     """)
     best_placement_query = text("""
         SELECT o.placement
         FROM offer_targets t JOIN offers o ON o.id = t.offer_id
-        WHERE o.restaurant_id = :rid AND t.accepted_at >= :hist_start
+        WHERE o.store_id = :rid AND t.accepted_at >= :hist_start
         GROUP BY o.placement ORDER BY COUNT(t.client_id) DESC LIMIT 1
     """)
     
@@ -206,7 +206,7 @@ async def get_dashboard_stats(
             (SELECT COUNT(*) FROM offer_claims WHERE offer_id = o.id AND status='REDEEMED') as redeemed
 
         FROM offers o
-        WHERE o.restaurant_id = :rid 
+        WHERE o.store_id = :rid 
           AND o.status = 'ACTIVE' 
           AND o.end_at > NOW()
         ORDER BY o.start_at DESC

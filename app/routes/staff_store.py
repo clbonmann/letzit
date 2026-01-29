@@ -17,19 +17,19 @@ from app.schemas.client import get_address_from_coords
 from app.utils.cnpj import normalize_cnpj 
 from app.services.storage import upload_image 
 from app.schemas.staff import (
-    RestaurantRead, 
-    RestaurantUpdate, 
-    RestaurantFeaturesResponse, 
-    RestaurantFeaturesUpdateRequest, 
-    RestaurantFeaturesUpdateResponse, 
+    StoreRead, 
+    StoreUpdate, 
+    StoreFeaturesResponse, 
+    StoreFeaturesUpdateRequest, 
+    StoreFeaturesUpdateResponse, 
     TaxGroup,
     TaxItem, 
-    RestaurantStatusUpdate
+    StoreStatusUpdate
 )
 
-from app.models import Restaurant, RestaurantStaff as Staff
+from app.models import Store, StoreStaff as Staff
 
-router = APIRouter(prefix="/staff/restaurant", tags=["staff-restaurant"])
+router = APIRouter(prefix="/staff/store", tags=["staff-store"])
 
 # --- Helper Models ---
 class DeleteImageRequest(BaseModel):
@@ -38,35 +38,35 @@ class DeleteImageRequest(BaseModel):
 # --- Helper Functions ---
 
 def _is_internal_admin(staff: dict) -> bool:
-    return staff.get("role") == "INTERNAL_ADMIN" or int(staff.get("restaurant_id", 0)) == 1
+    return staff.get("role") == "INTERNAL_ADMIN" or int(staff.get("store_id", 0)) == 1
 
-def _require_can_manage_restaurant(staff: dict, restaurant_id: int) -> None:
+def _require_can_manage_store(staff: dict, store_id: int) -> None:
     if _is_internal_admin(staff):
         return
-    if int(staff["restaurant_id"]) != int(restaurant_id):
-        raise HTTPException(status_code=403, detail="Not allowed for this restaurant")
+    if int(staff["store_id"]) != int(store_id):
+        raise HTTPException(status_code=403, detail="Not allowed for this store")
 
 def _require_admin_role(staff: dict) -> None:
     role = staff.get("role")
     if role not in ("INTERNAL_ADMIN", "REST_ADMIN"):
         raise HTTPException(status_code=403, detail="Admin role required")
 
-# --- Standard Restaurant Endpoints (List, Update, Upload) ---
+# --- Standard Store Endpoints (List, Update, Upload) ---
 
-@router.get("", response_model=List[RestaurantRead])
-async def list_my_restaurants(
+@router.get("", response_model=List[StoreRead])
+async def list_my_stores(
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
-    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
+    x_store_id: int | None = Header(default=None, alias="x-store-id"),
 ):
-    logged_rid = int(staff["restaurant_id"])
+    logged_rid = int(staff["store_id"])
     rid = logged_rid
 
     # Lógica Super Admin
-    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
-        rid = x_restaurant_id
+    if staff.get("role") == "INTERNAL_ADMIN" and x_store_id:
+        rid = x_store_id
     """
-    List restaurants.
+    List stores.
     - INTERNAL_ADMIN: Sees all.
     - Normal Staff: Sees only their own.
     """
@@ -79,12 +79,12 @@ async def list_my_restaurants(
             working_hours, updated_at, reputation, instagram, facebook, tiktok, tripadvisor, site, whatsapp,
             ST_Y(geog::geometry) as lat,
             ST_X(geog::geometry) as lon
-        FROM restaurants
+        FROM stores
     """
 
     if role == "INTERNAL_ADMIN":
         query = text(f"{base_sql} WHERE id = :rid")
-        params = {"rid": x_restaurant_id}
+        params = {"rid": x_store_id}
     else:
         query = text(f"{base_sql} WHERE id = :rid")
         params = {"rid": rid}
@@ -92,35 +92,35 @@ async def list_my_restaurants(
     rows = (await db.execute(query, params)).mappings().all()
     
     if role != "INTERNAL_ADMIN" and not rows:
-        raise HTTPException(404, "Restaurante vinculado não encontrado.")
+        raise HTTPException(404, "Estabelecimento vinculado não encontrado.")
 
-    return [RestaurantRead(**row) for row in rows]
+    return [StoreRead(**row) for row in rows]
 
 
-@router.patch("", response_model=RestaurantRead)
-async def update_restaurant_details(
-    payload: RestaurantUpdate,
+@router.patch("", response_model=StoreRead)
+async def update_store_details(
+    payload: StoreUpdate,
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
 ):
     """
-    Atualiza dados do restaurante dinamicamente.
+    Atualiza dados do estabelecimento dinamicamente.
     """
     role = str(staff.get("role") or "")
     
     # 1. Definição do ID
     if role == "INTERNAL_ADMIN":
         if not payload.id:
-            raise HTTPException(400, "Admin deve informar o 'id' do restaurante.")
+            raise HTTPException(400, "Admin deve informar o 'id' do estabelecimento.")
         rid = payload.id
     else:
-        rid = int(staff.get("restaurant_id") or 0)
+        rid = int(staff.get("store_id") or 0)
 
-    # 2. Busca o restaurante existente (ORM)
-    current_restaurant = (await db.execute(select(Restaurant).where(Restaurant.id == rid))).scalars().first()
+    # 2. Busca o estabelecimento existente (ORM)
+    current_store = (await db.execute(select(Store).where(Store.id == rid))).scalars().first()
     
-    if not current_restaurant:
-        raise HTTPException(404, "Restaurante não encontrado.")
+    if not current_store:
+        raise HTTPException(404, "Estabelecimento não encontrado.")
 
     # 3. Prepara os dados dinâmicos
     update_data = payload.model_dump(exclude_unset=True)
@@ -156,21 +156,21 @@ async def update_restaurant_details(
     update_data["updated_at"] = datetime.now(timezone.utc)
 
     if not update_data:
-        return current_restaurant
+        return current_store
 
     try:
         stmt = (
-             update(Restaurant)
-            .where(Restaurant.id == rid)
+             update(Store)
+            .where(Store.id == rid)
             .values(**update_data)
-            .returning(Restaurant)
+            .returning(Store)
         )
         
         result = await db.execute(stmt)
-        updated_restaurant = result.scalars().first()
+        updated_store = result.scalars().first()
         
         await db.commit()
-        return updated_restaurant
+        return updated_store
 
     except IntegrityError:
         await db.rollback()
@@ -178,18 +178,18 @@ async def update_restaurant_details(
 
 
 @router.post("/logo")
-async def upload_restaurant_logo(
+async def upload_store_logo(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
-    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
+    x_store_id: int | None = Header(default=None, alias="x-store-id"),
 ):
-    logged_rid = int(staff["restaurant_id"])
+    logged_rid = int(staff["store_id"])
     rid = logged_rid
 
     # Lógica Super Admin
-    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
-        rid = x_restaurant_id
+    if staff.get("role") == "INTERNAL_ADMIN" and x_store_id:
+        rid = x_store_id
 
     """Upload Logo to Cloudinary + DB Update."""
     try:
@@ -205,7 +205,7 @@ async def upload_restaurant_logo(
 
         url = upload_image(
             file, 
-            folder=f"restaurants/{rid}/logo",
+            folder=f"stores/{rid}/logo",
             transformation=transformations 
         )
         
@@ -214,7 +214,7 @@ async def upload_restaurant_logo(
         raise HTTPException(500, "Falha no upload da imagem.")
 
     await db.execute(
-        text("UPDATE restaurants SET logo_url = :url, logo_updated_at = NOW() WHERE id = :rid"),
+        text("UPDATE stores SET logo_url = :url, logo_updated_at = NOW() WHERE id = :rid"),
         {"url": url, "rid": rid}
     )
     await db.commit()
@@ -222,22 +222,22 @@ async def upload_restaurant_logo(
     return {"status": "success", "logo_url": url}
 
 @router.post("/cover")
-async def upload_restaurant_cover(
+async def upload_store_cover(
     files: List[UploadFile] = File(...), 
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
-    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
+    x_store_id: int | None = Header(default=None, alias="x-store-id"),
 ):
-    logged_rid = int(staff["restaurant_id"])
+    logged_rid = int(staff["store_id"])
     rid = logged_rid
 
     # Lógica Super Admin
-    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
-        rid = x_restaurant_id
+    if staff.get("role") == "INTERNAL_ADMIN" and x_store_id:
+        rid = x_store_id
     """Upload de múltiplas capas para o Cloudinary + Update no Banco."""
 
     # 1. Busca as capas atuais para validar limite
-    query_select = text("SELECT cover_image_url FROM restaurants WHERE id = :rid")
+    query_select = text("SELECT cover_image_url FROM stores WHERE id = :rid")
     current_res = await db.execute(query_select, {"rid": rid})
     current_cover_str = current_res.scalar()
 
@@ -276,7 +276,7 @@ async def upload_restaurant_cover(
             # Passa o file_object que agora é síncrono E tem content_type
             url = upload_image(
                 file_object, 
-                folder=f"restaurants/{rid}/cover",
+                folder=f"stores/{rid}/cover",
                 transformation=transformations 
             )
             new_urls.append(url)
@@ -291,7 +291,7 @@ async def upload_restaurant_cover(
         final_cover_str = ";".join(cover_list)
 
         await db.execute(
-            text("UPDATE restaurants SET cover_image_url = :url WHERE id = :rid"),
+            text("UPDATE stores SET cover_image_url = :url WHERE id = :rid"),
             {"url": final_cover_str, "rid": rid}
         )
         await db.commit()
@@ -299,23 +299,23 @@ async def upload_restaurant_cover(
     return {"status": "success", "cover_urls": new_urls}
 
 @router.delete("/cover")
-async def delete_restaurant_cover(
+async def delete_store_cover(
     payload: DeleteImageRequest,
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
-    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
+    x_store_id: int | None = Header(default=None, alias="x-store-id"),
 ):
-    logged_rid = int(staff["restaurant_id"])
+    logged_rid = int(staff["store_id"])
     rid = logged_rid
 
     # Lógica Super Admin
-    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
-        rid = x_restaurant_id
+    if staff.get("role") == "INTERNAL_ADMIN" and x_store_id:
+        rid = x_store_id
     """Remove uma URL específica da lista de capas."""
     url_to_remove = payload.url
 
     # 1. Pega a lista atual
-    query_select = text("SELECT cover_image_url FROM restaurants WHERE id = :rid")
+    query_select = text("SELECT cover_image_url FROM stores WHERE id = :rid")
     res = await db.execute(query_select, {"rid": rid})
     current_str = res.scalar()
 
@@ -326,7 +326,7 @@ async def delete_restaurant_cover(
     current_list = [c for c in current_str.split(";") if c.strip()]
     
     if url_to_remove not in current_list:
-        raise HTTPException(404, "Imagem não encontrada na lista deste restaurante.")
+        raise HTTPException(404, "Imagem não encontrada na lista deste estabelecimento.")
 
     # Remove a URL
     new_list = [url for url in current_list if url != url_to_remove]
@@ -334,7 +334,7 @@ async def delete_restaurant_cover(
 
     # 3. Atualiza o Banco
     await db.execute(
-        text("UPDATE restaurants SET cover_image_url = :url WHERE id = :rid"),
+        text("UPDATE stores SET cover_image_url = :url WHERE id = :rid"),
         {"url": new_str, "rid": rid}
     )
     await db.commit()
@@ -377,22 +377,22 @@ async def get_features_taxonomy(
     return response_data
 
 
-@router.get("/{restaurant_id}/features", response_model=RestaurantFeaturesResponse)
-async def get_restaurant_features(
-    restaurant_id: int,
+@router.get("/{store_id}/features", response_model=StoreFeaturesResponse)
+async def get_store_features(
+    store_id: int,
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
-) -> RestaurantFeaturesResponse:
-    _require_can_manage_restaurant(staff, restaurant_id)
+) -> StoreFeaturesResponse:
+    _require_can_manage_store(staff, store_id)
 
     rows = (await db.execute(text("""
         SELECT fg.code, rf.feature_id
-        FROM restaurant_features rf
+        FROM store_features rf
         JOIN features f ON f.id = rf.feature_id
         JOIN feature_groups fg ON fg.id = f.group_id
-        WHERE rf.restaurant_id = :rid
+        WHERE rf.store_id = :rid
         ORDER BY fg.code, rf.feature_id
-    """), {"rid": restaurant_id})).mappings().all()
+    """), {"rid": store_id})).mappings().all()
 
     selections: Dict[str, List[int]] = {}
     for r in rows:
@@ -400,18 +400,18 @@ async def get_restaurant_features(
         fid = int(r["feature_id"])
         selections.setdefault(code, []).append(fid)
 
-    return RestaurantFeaturesResponse(restaurant_id=restaurant_id, selections=selections)
+    return StoreFeaturesResponse(store_id=store_id, selections=selections)
 
 
-@router.put("/{restaurant_id}/features", response_model=RestaurantFeaturesResponse)
-async def update_restaurant_features(
-    restaurant_id: int,
-    payload: RestaurantFeaturesUpdateRequest,
+@router.put("/{store_id}/features", response_model=StoreFeaturesResponse)
+async def update_store_features(
+    store_id: int,
+    payload: StoreFeaturesUpdateRequest,
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
 ):
     _require_admin_role(staff)
-    _require_can_manage_restaurant(staff, restaurant_id)
+    _require_can_manage_store(staff, store_id)
 
     incoming_feature_ids: Set[int] = set()
     if payload.selections:
@@ -420,9 +420,9 @@ async def update_restaurant_features(
                 incoming_feature_ids.update(ids)
     
     if not incoming_feature_ids:
-        await db.execute(text("DELETE FROM restaurant_features WHERE restaurant_id = :rid"), {"rid": restaurant_id})
+        await db.execute(text("DELETE FROM store_features WHERE store_id = :rid"), {"rid": store_id})
         await db.commit()
-        return RestaurantFeaturesResponse(restaurant_id=restaurant_id, selections={})
+        return StoreFeaturesResponse(store_id=store_id, selections={})
 
     validation_query = text("""
         SELECT f.id as feature_id, fg.code as group_code, fg.max_select
@@ -454,8 +454,8 @@ async def update_restaurant_features(
 
     try:
         current_rows = (await db.execute(
-            text("SELECT feature_id FROM restaurant_features WHERE restaurant_id = :rid"),
-            {"rid": restaurant_id}
+            text("SELECT feature_id FROM store_features WHERE store_id = :rid"),
+            {"rid": store_id}
         )).scalars().all()
         current_ids = set(current_rows)
 
@@ -464,14 +464,14 @@ async def update_restaurant_features(
 
         if ids_to_delete:
             await db.execute(
-                text("DELETE FROM restaurant_features WHERE restaurant_id = :rid AND feature_id = ANY(:ids)"),
-                {"rid": restaurant_id, "ids": ids_to_delete}
+                text("DELETE FROM store_features WHERE store_id = :rid AND feature_id = ANY(:ids)"),
+                {"rid": store_id, "ids": ids_to_delete}
             )
         
         if ids_to_insert:
             await db.execute(
-                text("INSERT INTO restaurant_features (restaurant_id, feature_id) VALUES (:rid, :fid)"),
-                [{"rid": restaurant_id, "fid": fid} for fid in ids_to_insert]
+                text("INSERT INTO store_features (store_id, feature_id) VALUES (:rid, :fid)"),
+                [{"rid": store_id, "fid": fid} for fid in ids_to_insert]
             )
 
         await db.commit()
@@ -480,42 +480,42 @@ async def update_restaurant_features(
         await db.rollback()
         raise e
 
-    return RestaurantFeaturesResponse(
-        restaurant_id=restaurant_id, 
+    return StoreFeaturesResponse(
+        store_id=store_id, 
         selections=payload.selections
     )
 
-@router.patch("/status", response_model=RestaurantStatusUpdate)
-async def update_restaurant_status(
-    payload: RestaurantStatusUpdate,
+@router.patch("/status", response_model=StoreStatusUpdate)
+async def update_store_status(
+    payload: StoreStatusUpdate,
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
-    x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
+    x_store_id: int | None = Header(default=None, alias="x-store-id"),
 ):
-    logged_rid = int(staff["restaurant_id"])
+    logged_rid = int(staff["store_id"])
     rid = logged_rid
 
     # Lógica Super Admin
-    if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
-        rid = x_restaurant_id
+    if staff.get("role") == "INTERNAL_ADMIN" and x_store_id:
+        rid = x_store_id
     """
     Endpoint rápido para alternar status Aberto/Fechado e Horas.
     """
-    stmt = select(Restaurant).where(Restaurant.id == rid)
+    stmt = select(Store).where(Store.id == rid)
     result = await db.execute(stmt)
     
-    restaurant = result.scalars().first() 
+    store = result.scalars().first() 
 
-    if not restaurant:
-        raise HTTPException(status_code=404, detail="Restaurant not found")
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
 
     if payload.is_open is not None:
-        restaurant.is_open = payload.is_open
+        store.is_open = payload.is_open
     
     if payload.working_hours is not None:
-        restaurant.working_hours = payload.working_hours
+        store.working_hours = payload.working_hours
 
     await db.commit()
-    await db.refresh(restaurant)
+    await db.refresh(store)
     
-    return restaurant
+    return store

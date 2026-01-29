@@ -107,21 +107,21 @@ class PicksRequest(BaseModel):
     city_slug: Optional[str] = Field(None, description="Slug da cidade para filtro")
     placement: str = Field("NORMAL", description="Tipo de oferta: NORMAL, CITY_HOME, etc.")
 
-class RestaurantsRequest(BaseModel):
+class StoresRequest(BaseModel):
     lat: Optional[float] = Field(None, description="Latitude do cliente")
     lon: Optional[float] = Field(None, description="Longitude do cliente")
     page: Optional[int] = Field(1, description= "Número da página")
-    limit: Optional[int] = Field(10, description= "Número de restaurantes por página")
+    limit: Optional[int] = Field(10, description= "Número de estabelecimentos por página")
 
-class RestaurantDetailsResponse(BaseModel):
-    restaurant_id: int
-    # Retorna o que o restaurante tem salvo, agrupado por código
+class StoreDetailsResponse(BaseModel):
+    store_id: int
+    # Retorna o que o estabelecimento tem salvo, agrupado por código
     selections: Dict[str, List[int]]
 
 class MobileFeaturesResponse(BaseModel):
     features: Dict[str, bool]
 
-class RestaurantDetailsResponse(BaseModel):
+class StoreDetailsResponse(BaseModel):
     id: int
     name: str
     logo_url: Optional[str] = None

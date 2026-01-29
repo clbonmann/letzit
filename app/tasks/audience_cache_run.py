@@ -21,7 +21,7 @@ def to_asyncpg(url: str) -> str:
 RADIUS_COUNTS_SQL = text("""
 WITH r AS (
   SELECT geog
-  FROM restaurants
+  FROM stores
   WHERE id = :rid
 )
 SELECT
@@ -40,11 +40,11 @@ WHERE u.geog IS NOT NULL
 """)
 
 UPSERT_SQL = text("""
-INSERT INTO restaurant_audience_cache 
-  (restaurant_id, active_minutes, counts_by_radius, computed_at)
+INSERT INTO store_audience_cache 
+  (store_id, active_minutes, counts_by_radius, computed_at)
 VALUES 
   (:rid, 15, CAST(:counts AS jsonb), :computed_at)
-ON CONFLICT (restaurant_id)
+ON CONFLICT (store_id)
 DO UPDATE SET
   active_minutes = 15,
   counts_by_radius = EXCLUDED.counts_by_radius,
@@ -63,13 +63,13 @@ async def run_once() -> None:
     now = datetime.now(timezone.utc)
 
     async with Session() as db:
-        restaurants = (await db.execute(
-            text("SELECT id FROM restaurants WHERE geog IS NOT NULL")
+        stores = (await db.execute(
+            text("SELECT id FROM stores WHERE geog IS NOT NULL")
         )).scalars().all()
 
         updated = 0
 
-        for rid in restaurants:
+        for rid in stores:
             row = (await db.execute(RADIUS_COUNTS_SQL, {"rid": int(rid)})).mappings().first()
 
             counts = {
@@ -98,7 +98,7 @@ async def run_once() -> None:
         await db.commit()
 
     await engine.dispose()
-    print(f"[audience-cache] computed_at={now.isoformat()} restaurants_updated={updated}")
+    print(f"[audience-cache] computed_at={now.isoformat()} stores_updated={updated}")
 
 
 def main() -> None:
