@@ -1,4 +1,5 @@
 from __future__ import annotations
+from asyncio.windows_events import NULL
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Annotated, List, Literal, Dict, Union, Any
 from uuid import uuid4
@@ -18,7 +19,8 @@ from app.schemas.client import (
     RestaurantsRequest, 
     MobileFeaturesResponse, 
     RestaurantDetailsResponse,
-    ClientLocationUpdate)
+    ClientLocationUpdate,
+    CancelOfferResponse)
 
 router = APIRouter(prefix="/client/offers", tags=["client-feed"])
 
@@ -30,7 +32,8 @@ async def mark_offers_as_viewed(uid: int, offer_ids: list, db_session_factory):
         await db.execute(
             text("""
                 UPDATE offer_targets 
-                SET viewed_at = NOW() 
+                SET viewed_at = NOW() ,
+                    state = 'VIEWED'
                 WHERE client_id = :uid 
                   AND offer_id = ANY(:oids) 
                   AND viewed_at IS NULL
@@ -338,7 +341,7 @@ async def accept_offer(
 
         # Atualiza o Target para marcar que a pescaria foi bem sucedida
         await db.execute(
-            text("UPDATE offer_targets SET accepted_at = :now WHERE client_id = :uid AND offer_id = :oid"),
+            text("UPDATE offer_targets SET accepted_at = :now, state = 'ACCEPTED' WHERE client_id = :uid AND offer_id = :oid"),
             {"uid": uid, "oid": offer_id, "now": now}
         )
 
@@ -400,7 +403,7 @@ async def register_offer_click(
     await db.execute(
         text("""
             UPDATE offer_targets 
-            SET clicked_at = NOW() 
+            SET clicked_at = NOW(), state = 'CLICKED'
             WHERE client_id = :uid 
               AND offer_id = :oid 
               AND clicked_at IS NULL
@@ -502,3 +505,84 @@ async def update_client_location(
         await db.rollback()
         # Não queremos travar o app se isso falhar, então pode retornar erro ou silenciar
         raise HTTPException(status_code=500, detail="Erro ao salvar localização")
+    
+@router.post("/{offer_id}/cancel", response_model=CancelOfferResponse)
+async def cancel_offer(
+    offer_id: int, 
+    bg: BackgroundTasks, 
+    db: AsyncSession = Depends(get_db_session), 
+    uid: int = Depends(get_current_client_id)
+):
+    now = datetime.now(timezone.utc)
+
+    # 1. Verifica se o usuário foi "pescado" (Targeted) e se já tem um Claim
+    # Isso substitui os checks de bloqueio/cooldown que o Matchmaker já fez.
+    query = text("""
+        SELECT 1 FROM offer_targets t
+        WHERE t.offer_id = :oid AND t.client_id = :uid and t.state = 'ACCEPTED' and t.expired_at > NOW()
+    """)
+    
+    check = (await db.execute(query, {"oid": offer_id, "uid": uid})).mappings().first()
+    
+    # Se não existe na offer_targets, o usuário não tem direito ao cancelamento (segurança)
+    if not check:
+        return CancelOfferResponse(status="NOT_ELIGIBLE", offer_id=offer_id, client_id=uid)
+    
+    # 2. Bloqueio de Oferta e Checagem de Estoque/Status
+    # Usamos FOR UPDATE para evitar que dois usuários peguem a última vaga ao mesmo tempo
+    o = (await db.execute(
+        text("SELECT id, status, end_at, accept_limit, accepted_count, accept_ttl_hours FROM offers WHERE id=:oid FOR UPDATE"),
+        {"oid": offer_id}
+    )).mappings().first()
+
+    if not o or o.status != "ACTIVE" or o.end_at <= now:
+        return AcceptOfferResponse(status="CLOSED", offer_id=offer_id)
+    
+    if o.accepted_count >= o.accept_limit:
+        return AcceptOfferResponse(status="SOLD_OUT", offer_id=offer_id)
+
+    # 3. Processamento do Resgate (Claim)
+    ttl = o.accept_ttl_hours or 6
+    exp = min(o.end_at, now + timedelta(hours=ttl))
+    qr = str(uuid4())
+
+    try:
+        # Insere o Cupom
+        await db.execute(
+            text("""
+                UPDATE offer_claims 
+                SET status = 'CANCELLED', 
+                    canceled_at = :now,  
+                    qr_token = :qr
+                WHERE offer_id = :oid AND client_id = :uid
+            """), 
+            {"oid": offer_id, "uid": uid, "now": now, "qr": None}
+        )
+
+        # Atualiza Contagem da Oferta
+        await db.execute(
+            text("UPDATE offers SET accepted_count = accepted_count - 1 WHERE id = :oid"),
+            {"oid": offer_id}
+        )
+
+        # Atualiza o Target para marcar que a pescaria foi bem sucedida
+        await db.execute(
+            text("UPDATE offer_targets SET canceled_at = :now, state = 'CANCELLED' WHERE client_id = :uid AND offer_id = :oid"),
+            {"uid": uid, "oid": offer_id, "now": now}
+        )
+
+        await db.commit()
+                
+        return CancelOfferResponse(
+            status="CANCELLED", 
+            offer_id=offer_id, 
+            client_id=uid, 
+            expires_at=exp, 
+            qr_token=None, 
+            accepted_count=o.accepted_count - 1, 
+            accept_limit=o.accept_limit
+        )
+
+    except Exception as e:
+        await db.rollback()
+        raise e

@@ -357,3 +357,62 @@ class PackageCreate(BaseModel):
     features: List[str]
     is_popular: bool = False
     color_theme: str = "slate"
+
+# 1. Financeiro (Já tínhamos)
+class DashboardFinanceStats(BaseModel):
+    balance_km: float
+    avg_cost_per_km: float
+    stock_value_reais: float
+
+# 2. Funil de Vendas e Operação (Já tínhamos)
+class DashboardFunnelStats(BaseModel):
+    today_reached: int
+    today_accepted: int
+    today_redeemed: int
+    today_viewed: int
+    today_clicked: int
+    today_cancelled: int
+    today_conversion_rate: float
+    today_cancellation_rate: float
+
+# 3. NOVO: Métricas de Engajamento (Médias dos últimos 30 dias)
+class EngagementStats(BaseModel):
+    total_reached_count: int     # Clientes alcançados
+    total_viewed_count: int      # Clientes que viram
+    total_clicked_count: int     # Clientes que clicaram
+    total_cancelled_count: int   # Clientes que cancelaram
+    total_accepted_count: int    # Clientes que aceitaram
+    total_no_shows_count: int    # Clientes que deram no-show
+    total_conversion_rate: float # Taxa de conversão total
+    total_cancellation_rate: float # Taxa de cancelamento total
+    avg_distance_km: float       # Distância média do alvo
+    best_placement: str | None   # "NORMAL" ou "CITY_HOME"
+    best_offer_type: str | None  # Ex: "DISCOUNT_OVER_BILL"
+
+# 4. NOVO: Ciclo de Tempo (Médias em Minutos)
+class TimeCycleStats(BaseModel):
+    avg_time_to_view_min: float   # Release -> View
+    avg_time_to_accept_min: float # Release -> Accept
+    avg_time_to_redeem_min: float # Release -> Redeem (Ciclo completo)
+
+# 5. NOVO: Detalhe de Oferta Ativa
+class ActiveOfferDetail(BaseModel):
+    offer_id: int
+    title: str
+    placement: str
+    minutes_active: int          # Tempo desde o release
+    audience_expected: int       # Estimativa inicial
+    reached_count: int           # Targets criados (real)
+    accepted_count: int          # Quantos aceitaram
+    redeemed_count: int          # Quantos já foram lá
+    conversion_percent: float
+
+# --- RESPOSTA FINAL DO DASHBOARD ---
+class DashboardStatsResponse(BaseModel):
+    finance: DashboardFinanceStats
+    funnel: DashboardFunnelStats
+    engagement: EngagementStats
+    cycle_times: TimeCycleStats
+    
+    # Lista detalhada das ativas
+    active_offers_list: List[ActiveOfferDetail]

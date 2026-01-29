@@ -1,27 +1,29 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict
+from typing import List
 
-from fastapi import APIRouter, Depends, Header, Query, HTTPException
-from sqlalchemy import select, text
+from fastapi import APIRouter, Depends, Header, Query
+from sqlalchemy import select, text, desc, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
-from app.models import Restaurant
-# IMPORTANDO SCHEMAS (Agora do lugar certo)
+from app.models import Restaurant, RestaurantAccount, Offer, OfferTarget, OfferClaim
 from app.schemas.staff import (
     DashboardStatsResponse,
-    AudienceStatsResponse,
-    AudienceBucket
+    DashboardFinanceStats,
+    DashboardFunnelStats,
+    EngagementStats,
+    TimeCycleStats,
+    ActiveOfferDetail
 )
 
 router = APIRouter(prefix="/staff/stats", tags=["staff-stats"])
 
 @router.get("/dashboard", response_model=DashboardStatsResponse)
 async def get_dashboard_stats(
-    days_revenue: int = Query(30, description="Dias para cálculo de receita total"),
+    days_window: int = Query(30, description="Janela de análise histórica"),
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff),
     x_restaurant_id: int | None = Header(default=None, alias="x-restaurant-id"),
@@ -32,149 +34,178 @@ async def get_dashboard_stats(
     # Lógica Super Admin
     if staff.get("role") == "INTERNAL_ADMIN" and x_restaurant_id:
         rid = x_restaurant_id
-    """
-    Painel Principal:
-    1. Resumo Financeiro (Últimos 30 dias).
-    2. Operação de HOJE (Para o gerente acompanhar o movimento).
-    3. Status das Ofertas (Quantas estão rodando).
-    """
+        
     now = datetime.now(timezone.utc)
-    
-    # Data de corte para Receita
-    since_revenue = now - timedelta(days=days_revenue)
-    
-    # Data de corte para "Hoje" (início do dia UTC)
     start_of_today = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    historical_start = now - timedelta(days=days_window)
 
-    # 1. Query Combinada: KPIs Financeiros e Diários
+    # ==========================================================================
+    # 1. FINANCEIRO (Ledger)
+    # ==========================================================================
+    stmt_ledger = (
+        select(RestaurantAccount)
+        .where(RestaurantAccount.restaurant_id == rid)
+        .order_by(desc(RestaurantAccount.id))
+        .limit(1)
+    )
+    last_entry = (await db.execute(stmt_ledger)).scalar_one_or_none()
+    
+    balance_km = last_entry.balance_km if last_entry else 0.0
+    avg_cost_reais = (last_entry.cost_km_cents / 100.0) if (last_entry and last_entry.cost_km_cents) else 0.0
+    
+    finance_stats = DashboardFinanceStats(
+        balance_km=balance_km,
+        avg_cost_per_km=avg_cost_reais,
+        stock_value_reais=balance_km * avg_cost_reais
+    )
+
+    # ==========================================================================
+    # 2. FUNIL DE VENDAS (Hoje + Receita Janela)
+    # ==========================================================================
     kpi_query = text("""
         SELECT 
-            -- Receita Total (Janela de dias)
-            COALESCE(SUM(o.price_cents) FILTER (
-                WHERE c.status = 'REDEEMED' AND c.redeemed_at >= :since_rev
-            ), 0)::int as revenue,
-
-            -- Operação HOJE: Aceites
-            COUNT(c.id) FILTER (
-                WHERE c.accepted_at >= :start_today
-            )::int as today_accepted,
-
-            -- Operação HOJE: Resgates (Vendas)
-            COUNT(c.id) FILTER (
-                WHERE c.status = 'REDEEMED' AND c.redeemed_at >= :start_today
-            )::int as today_redeemed,
-
-            -- Operação HOJE: No Shows
-            COUNT(c.id) FILTER (
-                WHERE c.status IN ('NO_SHOW', 'CANCELLED') 
-                AND (c.expires_at >= :start_today OR c.canceled_at >= :start_today)
-            )::int as today_no_show
-
-        FROM offer_claims c
-        JOIN offers o ON o.id = c.offer_id
-        WHERE o.restaurant_id = :rid
+          COUNT(DISTINCT ot.client_id) FILTER (
+                WHERE ot.state = 'REDEEMED' AND ot.redeemed_at >= :hist_start
+            )::int as unique_clients,  
+            COUNT(ot.client_id ) FILTER (WHERE ot.released_at >= :today)::int as today_reached,             
+            COUNT(ot.client_id) FILTER (WHERE ot.viewed_at >= :today)::int as today_viewed,
+            COUNT(ot.client_id) FILTER (WHERE ot.clicked_at >= :today)::int as today_clicked,
+            COUNT(ot.client_id) FILTER (WHERE ot.accepted_at >= :today)::int as today_accepted,
+            COUNT(ot.client_id) FILTER (WHERE ot.cancelled_at >= :today)::int as today_cancelled,
+            COUNT(ot.client_id) FILTER (WHERE ot.redeemed_at >= :today)::int as today_redeemed,
+            COUNT(ot.client_id) FILTER (WHERE ot.released_at >= :hist_start)::int as total_reached,             
+            COUNT(ot.client_id) FILTER (WHERE ot.viewed_at >= :hist_start)::int as total_viewed,
+            COUNT(ot.client_id) FILTER (WHERE ot.clicked_at >= :hist_start)::int as total_clicked,
+            COUNT(ot.client_id) FILTER (WHERE ot.accepted_at >= :hist_start)::int as total_accepted,
+            COUNT(ot.client_id) FILTER (WHERE ot.cancelled_at >= :hist_start)::int as total_cancelled,
+            COUNT(ot.client_id) FILTER (WHERE ot.redeemed_at >= :hist_start)::int as total_redeemed,
+            count(ot.client_id) FILTER (WHERE ot.state = 'NO_SHOW' AND ot.expired_at >= :hist_start) as total_no_show,
+            COALESCE(AVG(ot.target_distance), 0) as avg_dist,
+            
+            -- Tempos (em Segundos -> converteremos para minutos no Python)
+            -- Release -> View
+            AVG(EXTRACT(EPOCH FROM (ot.viewed_at - ot.released_at))) FILTER (WHERE ot.viewed_at > ot.released_at) as sec_to_view,
+            
+            -- Release -> Accept
+            AVG(EXTRACT(EPOCH FROM (ot.accepted_at - ot.released_at))) FILTER (WHERE ot.accepted_at > ot.released_at) as sec_to_accept,
+            
+            -- Release -> Redeem
+            AVG(EXTRACT(EPOCH FROM (ot.redeemed_at - ot.released_at))) FILTER (WHERE ot.redeemed_at > ot.released_at) as sec_to_redeem
+        FROM offer_targets ot
+        WHERE ot.restaurant_id = :rid
     """)
     
     kpi = (await db.execute(kpi_query, {
         "rid": rid, 
-        "since_rev": since_revenue, 
-        "start_today": start_of_today
+        "hist_start": historical_start, 
+        "today": start_of_today
     })).mappings().first()
+    
+    funnel_stats = DashboardFunnelStats(
+        today_reached=kpi.today_reached or 0,
+        today_viewed=kpi.today_viewed or 0,
+        today_clicked=kpi.today_clicked or 0,
+        today_accepted=kpi.today_accepted or 0,
+        today_redeemed=kpi.today_redeemed or 0,
+        today_cancelled=kpi.today_cancelled or 0,
+        today_conversion_rate=(kpi.today_clicked or 0) / (kpi.today_viewed or 1) * 100 if (kpi.today_viewed or 0) > 0 else 0.0,
+        today_cancellation_rate=(kpi.today_cancelled or 0) / (kpi.today_accepted or 1) * 100 if (kpi.today_accepted or 0) > 0 else 0.0
+    )
 
-    # 2. Query de Ofertas Ativas (Agrupadas por tipo)
+    # Sub-queries para "Melhor Tipo" e "Melhor Placement" (Top 1)
+    # Baseado em volume de aceites
+    best_type_query = text("""
+        SELECT o.offer_type 
+        FROM offer_targets t JOIN offers o ON o.id = t.offer_id
+        WHERE o.restaurant_id = :rid AND t.accepted_at >= :hist_start
+        GROUP BY o.offer_type ORDER BY COUNT(t.client_id) DESC LIMIT 1
+    """)
+    best_placement_query = text("""
+        SELECT o.placement
+        FROM offer_targets t JOIN offers o ON o.id = t.offer_id
+        WHERE o.restaurant_id = :rid AND t.accepted_at >= :hist_start
+        GROUP BY o.placement ORDER BY COUNT(t.client_id) DESC LIMIT 1
+    """)
+    
+    best_type = (await db.execute(best_type_query, {"rid": rid, "hist_start": historical_start})).scalar()
+    best_placement = (await db.execute(best_placement_query, {"rid": rid, "hist_start": historical_start})).scalar()
+
+    engagement_stats = EngagementStats(
+        total_reached_count=kpi.total_reached or 0,
+        total_viewed_count=kpi.total_viewed or 0,
+        total_clicked_count=kpi.total_clicked or 0,
+        total_cancelled_count=kpi.total_cancelled or 0,
+        total_no_shows_count=kpi.total_no_show or 0,
+        total_accepted_count=kpi.total_accepted or 0,
+        total_conversion_rate=(kpi.total_accepted or 0) / (kpi.total_viewed or 1) * 100 if (kpi.total_viewed or 0) > 0 else 0.0,
+        total_cancellation_rate=(kpi.total_cancelled or 0) / (kpi.total_accepted or 1) * 100 if (kpi.total_accepted or 0) > 0 else 0.0,
+        avg_distance_km=round(float(kpi.avg_dist or 0) / 1000.0, 1), 
+        best_placement=best_placement,
+        best_offer_type=best_type
+    )
+
+    cycle_stats = TimeCycleStats(
+        # Aplicamos float() aqui também por segurança
+        avg_time_to_view_min=round(float(kpi.sec_to_view or 0) / 60.0, 1),
+        avg_time_to_accept_min=round(float(kpi.sec_to_accept or 0) / 60.0, 1),
+        avg_time_to_redeem_min=round(float(kpi.sec_to_redeem or 0) / 60.0, 1)
+    )
+
+    # ==========================================================================
+    # 4. LISTA DE OFERTAS ATIVAS (Snapshot em Tempo Real)
+    # ==========================================================================
+    # Queremos saber o status atual de cada oferta ativa
     active_query = text("""
-        SELECT placement, COUNT(*)::int as qtd
-        FROM offers 
-        WHERE restaurant_id = :rid 
-          AND status = 'ACTIVE' 
-          AND end_at > NOW()
-        GROUP BY placement
+        SELECT 
+            o.id, 
+            o.title, 
+            o.placement, 
+            o.start_at, -- ou o.created_at se preferir
+            o.audience_estimate,
+            
+            -- Métricas Reais
+            (SELECT COUNT(*) FROM offer_targets WHERE offer_id = o.id) as reached,
+            o.accepted_count,
+            (SELECT COUNT(*) FROM offer_claims WHERE offer_id = o.id AND status='REDEEMED') as redeemed
+
+        FROM offers o
+        WHERE o.restaurant_id = :rid 
+          AND o.status = 'ACTIVE' 
+          AND o.end_at > NOW()
+        ORDER BY o.start_at DESC
     """)
     
     active_rows = (await db.execute(active_query, {"rid": rid})).mappings().all()
-
-    # Processamento dos Dados
-    breakdown = {row.placement: row.qtd for row in active_rows}
-    total_active = sum(breakdown.values())
     
-    accepted = kpi.today_accepted or 0
-    redeemed = kpi.today_redeemed or 0
-    
-    # Taxa de Conversão Diária
-    conversion = (redeemed / accepted * 100) if accepted > 0 else 0.0
-
-    stmt_lock = select(Restaurant).where(Restaurant.id == rid).with_for_update()
-    result_lock = await db.execute(stmt_lock)
-    restaurant = result_lock.scalar_one_or_none()
-    if restaurant and restaurant.balance_km is not None:
-        balance_km = restaurant.balance_km
-    else:
-        balance_km = 0.0
-
-    return DashboardStatsResponse(
-        total_revenue_cents=kpi.revenue or 0,
+    active_offers_clean = []
+    for row in active_rows:
+        # Calculo de minutos ativa
+        mins_active = 0
+        if row.start_at:
+            delta = now - row.start_at
+            mins_active = int(delta.total_seconds() / 60)
+            
+        conv = (row.accepted_count / row.reached * 100) if row.reached > 0 else 0.0
         
-        today_accepted=accepted,
-        today_redeemed=redeemed,
-        today_no_shows=kpi.today_no_show or 0,
-        balance_km=balance_km,
-        conversion_rate_percent=conversion,
-        active_offers_count=total_active,
-        active_offers_breakdown=breakdown
+        active_offers_clean.append(ActiveOfferDetail(
+            offer_id=row.id,
+            title=row.title,
+            placement=row.placement,
+            minutes_active=mins_active,
+            audience_expected=row.audience_estimate or 0,
+            reached_count=row.reached,
+            accepted_count=row.accepted_count,
+            redeemed_count=row.redeemed,
+            conversion_percent=round(conv, 1)
+        ))
+
+    # ==========================================================================
+    # 5. RETORNO FINAL
+    # ==========================================================================
+    return DashboardStatsResponse(
+        finance=finance_stats,
+        funnel=funnel_stats,
+        engagement=engagement_stats,
+        cycle_times=cycle_stats,
+        active_offers_list=active_offers_clean
     )
-
-
-@router.get("/audience", response_model=AudienceStatsResponse)
-async def get_audience_realtime(
-    active_minutes: int = Query(60, ge=10, le=1440),
-    db: AsyncSession = Depends(get_db_session),
-    staff: dict = Depends(get_current_staff),
-):
-    """
-    Mapa de Calor (Real-Time):
-    Calcula quantos usuários ativos existem ao redor do restaurante AGORA.
-    """
-    rid = int(staff["restaurant_id"])
-
-    # 1. Pega Geo do Restaurante
-    rest = (await db.execute(
-        text("SELECT geog FROM restaurants WHERE id = :rid"), 
-        {"rid": rid}
-    )).mappings().first()
-
-    if not rest or not rest["geog"]:
-        raise HTTPException(400, "Localização do restaurante não configurada.")
-
-    # 2. Query Geoespacial (Buckets de Distância)
-    query = text("""
-        SELECT 
-            COUNT(*) FILTER (WHERE ST_DWithin(u.geog, :r_geog, 1000))::int as km1,
-            COUNT(*) FILTER (WHERE ST_DWithin(u.geog, :r_geog, 3000))::int as km3,
-            COUNT(*) FILTER (WHERE ST_DWithin(u.geog, :r_geog, 5000))::int as km5,
-            COUNT(*) FILTER (WHERE ST_DWithin(u.geog, :r_geog, 10000))::int as km10
-        FROM clients u
-        WHERE u.geog IS NOT NULL
-          AND u.is_blocked = FALSE
-          AND u.last_loc_at > (NOW() - make_interval(mins => :mins))
-    """)
-
-    counts = (await db.execute(query, {
-        "r_geog": rest["geog"], 
-        "mins": active_minutes
-    })).mappings().first()
-
-    # 3. Formata Resposta
-    buckets = [
-        AudienceBucket(radius_km=1, client_count=counts.km1, label="Vizinhos (1km)"),
-        AudienceBucket(radius_km=3, client_count=counts.km3, label="Bairro (3km)"),
-        AudienceBucket(radius_km=5, client_count=counts.km5, label="Região (5km)"),
-        AudienceBucket(radius_km=10, client_count=counts.km10, label="Cidade (10km)")
-    ]
-
-    return AudienceStatsResponse(
-        total_nearby=counts.km10,
-        active_window_minutes=active_minutes,
-        breakdown=buckets,
-        computed_at=datetime.now(timezone.utc)
-    )
-

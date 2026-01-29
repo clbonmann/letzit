@@ -148,3 +148,11 @@ class RestaurantDetailsResponse(BaseModel):
 class ClientLocationUpdate(BaseModel):
     lat: float
     lon: float
+
+class CancelOfferResponse(BaseModel):
+    status: str
+    offer_id: int
+    client_id: int
+    expires_at: datetime | None = None
+    accepted_count: int | None = None
+    accept_limit: int | None = None

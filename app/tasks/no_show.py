@@ -35,7 +35,7 @@ async def _process() -> dict:
             # 1) buscar claims expirados
             rows = (await db.execute(
                 text("""
-                    SELECT id, user_id
+                    SELECT id, user_id, offer_id
                     FROM offer_claims
                     WHERE status = 'ACCEPTED'
                       AND expires_at < :now
@@ -80,6 +80,15 @@ async def _process() -> dict:
                         "penalty": NO_SHOW_REPUTATION_PENALTY,
                         "cooldown": now + timedelta(hours=NO_SHOW_COOLDOWN_HOURS),
                     },
+                )
+                # 5) atualizar targets
+                await db.execute(
+                    text("""
+                        UPDATE offer_targets
+                        SET state = 'NO_SHOW'
+                        WHERE user_id = :uid and offer_id = :oid
+                    """),
+                    {"uid": user_id, "oid": row["offer_id"]},
                 )
 
                 affected += 1

@@ -170,6 +170,7 @@ class Restaurant(Base):
     staff = relationship("RestaurantStaff", back_populates="restaurant")
     reviews = relationship("RestaurantReview", back_populates="restaurant")
     account_history = relationship("RestaurantAccount", back_populates="restaurant")
+    targets = relationship("OfferTarget", back_populates="restaurant")
 
 class RestaurantStaff(Base):
     __tablename__ = "restaurant_staff"
@@ -232,6 +233,7 @@ class Offer(Base):
     cost_amount = Column(Numeric(10, 2), default=0.00)
     geog = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     offer_image_url = Column(String, nullable=True)
+
     restaurant = relationship("Restaurant", back_populates="offers")
     targets = relationship("OfferTarget", back_populates="offer")
     claims = relationship("OfferClaim", back_populates="offer")
@@ -243,15 +245,18 @@ class OfferTarget(Base):
     __tablename__ = "offer_targets"
 
     offer_id = Column(BigInteger, ForeignKey("offers.id", ondelete="CASCADE"), primary_key=True)
+    restaurant_id = Column(BigInteger, ForeignKey("restaurants.id", ondelete="CASCADE"), primary_key=True)
     client_id = Column(BigInteger, ForeignKey("clients.id", ondelete="CASCADE"), primary_key=True)
     batch_no = Column(Integer, nullable=False, default=1)
     state = Column(String, nullable=False, default="RELEASED")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expired_at = Column(DateTime(timezone=True), nullable=True)
     released_at = Column(DateTime(timezone=True), nullable=True)
     accepted_at = Column(DateTime(timezone=True), nullable=True)
     redeemed_at = Column(DateTime(timezone=True), nullable=True)
     viewed_at = Column(DateTime(timezone=True), nullable=True)
     clicked_at = Column(DateTime(timezone=True), nullable=True)
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
     geog_cli = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     geog_res = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     target_distance = Column(Integer, nullable=True)
@@ -259,6 +264,8 @@ class OfferTarget(Base):
 
     offer = relationship("Offer", back_populates="targets")
     client = relationship("Client", back_populates="targets")
+    restaurant = relationship("Restaurant", back_populates="targets")
+    offer = relationship("Offer", back_populates="targets")
 
 # =========================
 # CLAIMS & REVIEWS

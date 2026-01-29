@@ -41,10 +41,13 @@ async def _execute_matchmaking_logic():
         offers_query = text("""
             SELECT 
                 id, 
+                restaurante_id,
                 geog, 
                 radius_km, 
                 max_target_total, 
                 created_at, 
+                end_at,
+                start_at,
                 placement,
                 end_at 
             FROM offers 
@@ -61,12 +64,8 @@ async def _execute_matchmaking_logic():
             count_query = text("SELECT count(*) FROM offer_targets WHERE offer_id = :oid")
             current_targets = (await db.execute(count_query, {"oid": offer.id})).scalar()
 
-            #SE A OFERTA PLACEMENT FOR NORMAL, USA O RAIO, SENÃO HOME_CITY.
-            if offer.placement == 'NORMAL':
-                radius_meters = offer.radius_km * 1000 #km para metros
-            else:
-                radius_meters = 25000
-
+            radius_meters = offer.radius_km * 1000 #km para metros
+            
             limit_val = 500 # Default de segurança
 
             # Se tem limite total de alvos definido
@@ -78,9 +77,10 @@ async def _execute_matchmaking_logic():
             
             # --- LÓGICA DE INSERT (A PESCARIA) ---
             fishing_query = text(f"""
-                INSERT INTO offer_targets (offer_id, client_id, batch_no, state, geog_cli, geog_res, target_distance, created_at, placement, released_at)
+                INSERT INTO offer_targets (offer_id, restaurant_id, client_id, batch_no, state, geog_cli, geog_res, target_distance, created_at, expired_at, placement, released_at)
                 SELECT 
                     :oid,          -- offer_id
+                    :rid,          -- restaurant_id
                     c.id,          -- client_id
                     1,             -- batch_no
                     'RELEASED',    -- state inicial
@@ -88,6 +88,7 @@ async def _execute_matchmaking_logic():
                     :geog,
                     ST_Distance(c.geog, :geog),
                     :created_at,   -- created_at (Data da oferta)
+                    :expired_at,   -- expired_at (Data de expiração da oferta)
                     :placement,
                     NOW()          -- released_at (Data do disparo)
                 FROM clients c
@@ -113,7 +114,9 @@ async def _execute_matchmaking_logic():
             try:
                 result = await db.execute(fishing_query, {
                     "oid": offer.id,
+                    "rid": offer.restaurante_id,
                     "created_at": offer.created_at,
+                    "expired_at": offer.end_at,
                     "geog": offer.geog,
                     "placement":offer.placement,
                     "radius_meters": radius_meters, 
