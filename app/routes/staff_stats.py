@@ -230,10 +230,10 @@ async def get_dashboard_stats(
             placement=row.placement,
             minutes_active=mins_active,
             audience_expected=row.audience_estimate or 0,
-            reached_count=row.reached,
-            accepted_count=row.accepted_count,
-            redeemed_count=row.redeemed,
-            conversion_percent=round(conv, 1)
+            reached_count=row.reached or 0,
+            accepted_count=row.accepted_count or 0,
+            redeemed_count=row.redeemed or 0,
+            conversion_percent=round(conv, 1) or 0.0
         ))
 
     # ==========================================================================
