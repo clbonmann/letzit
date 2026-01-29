@@ -72,7 +72,7 @@ async def get_balance(
     store = result.scalar_one_or_none()
     
     if not store:
-        raise HTTPException(404, "Storee não encontrado")
+        raise HTTPException(404, "Store não encontrado")
         
     return {
         "balance_km": store.balance_km or 0.0,

@@ -363,7 +363,7 @@ class StoreAccount(Base):
     # Relacionamento (Opcional, ajuda em queries)
     store = relationship("Store", back_populates="account_history")
 
-# 1. Tabela de Grupos (Ex: Culinária, Storees, Ofertas)
+# 1. Tabela de Grupos (Ex: Culinária, Stores, Ofertas)
 class FavouritesGroup(Base):
     __tablename__ = "favourites_group"
 
