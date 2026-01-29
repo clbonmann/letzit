@@ -85,14 +85,14 @@ async def get_dashboard_stats(
     })).mappings().first()
    
     finance_stats = DashboardFinanceStats(
-        balance_km=last_entry.balance_km if last_entry else 0,
-        avg_cost_per_km=last_entry.cost_km_cents_current if last_entry else 0.0,
-        stock_value_reais=last_entry.total_balance if last_entry else 0.0,
+        balance_km=last_entry.balance_km or 0,
+        avg_cost_per_km=last_entry.cost_km_cents_current or 0.0,
+        stock_value_reais=last_entry.total_balance or 0.0,
         total_credit=last_entry.total_credit or 0,
         total_debit=last_entry.total_debit or 0,
         total_cost=last_entry.total_cost or 0.0,
         total_purchase=last_entry.total_purchase or 0.0,
-        total_balance=last_entry.total_balance or 0.0
+        total_balance=last_entry.total_balance or 0.0,
     )
 
     # ==========================================================================
