@@ -1,5 +1,4 @@
 from __future__ import annotations
-from sqlalchemy import nullable
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Annotated, List, Literal, Dict, Union, Any
 from uuid import uuid4
