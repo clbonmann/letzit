@@ -165,7 +165,7 @@ class Store(Base):
     tripadvisor = Column(String, nullable=True)
     site = Column(String, nullable=True)
     whatsapp = Column(String, nullable=True)
-    Store_type_id = Column(Integer, nullable=False)
+    store_type_id = Column(Integer, nullable=False)
 
     res_features = relationship("StoreFeature", back_populates="store", cascade="all, delete-orphan")
     offers = relationship("Offer", back_populates="store")
@@ -370,7 +370,7 @@ class FavouritesGroup(Base):
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String, unique=True, index=True, nullable=False) # Ex: "CUISINE_TYPE", "RESTAURANT"
     name = Column(String, nullable=False) # Ex: "Tipo de Culinária"
-    Store_type_id = Column(Integer, nullable=False)
+    store_type_id = Column(Integer, nullable=False)
     max_select = Column(Integer, default=1) # 0 = Ilimitado, 1 = Único, 3 = Top 3
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -436,7 +436,7 @@ class Packages(Base):
     color_theme = Column(String, default="slate")
 
 class StoreType(Base):
-    __tablename__ = "Store_types"
+    __tablename__ = "store_types"
 
     id = Column(Integer, primary_key=True, index=True)
     description = Column(String, nullable=False)
