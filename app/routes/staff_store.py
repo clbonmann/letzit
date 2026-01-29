@@ -48,7 +48,7 @@ def _require_can_manage_store(staff: dict, store_id: int) -> None:
 
 def _require_admin_role(staff: dict) -> None:
     role = staff.get("role")
-    if role not in ("INTERNAL_ADMIN", "REST_ADMIN"):
+    if role not in ("INTERNAL_ADMIN", "STORE_ADMIN"):
         raise HTTPException(status_code=403, detail="Admin role required")
 
 # --- Standard Store Endpoints (List, Update, Upload) ---

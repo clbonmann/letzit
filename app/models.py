@@ -194,7 +194,7 @@ class StoreStaff(Base):
 
     __table_args__ = (
         UniqueConstraint("store_id", "email", name="uq_store_email"),
-        CheckConstraint("role IN ('INTERNAL_ADMIN','REST_ADMIN','REST_STAFF')", name="ck_store_staff_role"),
+        CheckConstraint("role IN ('INTERNAL_ADMIN','STORE_ADMIN','STORE_STAFF')", name="ck_store_staff_role"),
     )
 
 # =========================
@@ -260,7 +260,7 @@ class OfferTarget(Base):
     clicked_at = Column(DateTime(timezone=True), nullable=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
     geog_cli = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
-    geog_res = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
+    geog_sto = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     target_distance = Column(Integer, nullable=True)
     placement = Column(String, nullable=True)
 

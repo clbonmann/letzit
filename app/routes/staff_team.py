@@ -68,7 +68,7 @@ async def invite_team_member(
         target_rid = x_store_id
 
     # Verificação de Permissão
-    if staff.get("role") not in ["REST_ADMIN", "INTERNAL_ADMIN"]:
+    if staff.get("role") not in ["STORE_ADMIN", "INTERNAL_ADMIN"]:
         raise HTTPException(403, "Apenas Admins podem convidar.")
 
     # 1. Check Duplicidade
@@ -172,7 +172,7 @@ async def admin_reset_password(
 ):
 
     # Verificação de Permissão
-    if staff.get("role") not in ["REST_ADMIN", "INTERNAL_ADMIN"]:
+    if staff.get("role") not in ["STORE_ADMIN", "INTERNAL_ADMIN"]:
         raise HTTPException(403, "Sem permissão.")
 
     stmt = select(StoreStaff).where(StoreStaff.id == staff_id)
@@ -201,7 +201,7 @@ async def remove_team_member(
     db: AsyncSession = Depends(get_db_session),
     staff: dict = Depends(get_current_staff)
 ):
-    if staff.get("role") not in ["REST_ADMIN", "INTERNAL_ADMIN"]:
+    if staff.get("role") not in ["STORE_ADMIN", "INTERNAL_ADMIN"]:
         raise HTTPException(403, "Sem permissão.")
     
     stmt = select(StoreStaff).where(StoreStaff.id == staff_id)
