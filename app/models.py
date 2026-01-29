@@ -157,6 +157,7 @@ class Restaurant(Base):
     working_hours = Column(BigInteger, nullable=True)
     geog = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     balance_km = Column(Integer, default=0, nullable=False)
+    balance_home = Column(Integer, default=0, nullable=False)
     reputation = Column(Float, default=0, nullable=True)
     instagram = Column(String, nullable=True)
     facebook = Column(String, nullable=True)
