@@ -256,6 +256,7 @@ async def get_offers_map_source(db: AsyncSession = Depends(get_db_session)):
 
 @router.get("/{offer_id}")
 async def get_offer_details(offer_id: int, uid: int = Depends(get_current_client_id), db: AsyncSession = Depends(get_db_session)):
+
     query = text("""
         SELECT o.id, o.title, o.description, o.message, o.offer_image_url, o.price_cents, o.original_price_cents, 
         o.end_at, o.placement, r.name as store_name, r.logo_url, r.cover_image_url, r.address_street,
@@ -280,6 +281,7 @@ async def accept_offer(
     # Isso substitui os checks de bloqueio/cooldown que o Matchmaker já fez.
     query = text("""
         SELECT 
+            t.store_id,
             t.offer_id, 
             c.status as claim_status, 
             c.expires_at, 
@@ -307,7 +309,7 @@ async def accept_offer(
     # 2. Bloqueio de Oferta e Checagem de Estoque/Status
     # Usamos FOR UPDATE para evitar que dois usuários peguem a última vaga ao mesmo tempo
     o = (await db.execute(
-        text("SELECT id, status, end_at, accept_limit, accepted_count, accept_ttl_hours FROM offers WHERE id=:oid FOR UPDATE"),
+        text("SELECT id, store_id,status, end_at, accept_limit, accepted_count, accept_ttl_hours FROM offers WHERE id=:oid FOR UPDATE"),
         {"oid": offer_id}
     )).mappings().first()
 
@@ -321,15 +323,16 @@ async def accept_offer(
     ttl = o.accept_ttl_hours or 6
     exp = min(o.end_at, now + timedelta(hours=ttl))
     qr = str(uuid4())
+    sid = o.store_id
 
     try:
         # Insere o Cupom
         await db.execute(
             text("""
-                INSERT INTO offer_claims (offer_id, client_id, status, accepted_at, expires_at, qr_token) 
-                VALUES (:oid, :uid, 'ACCEPTED', :now, :exp, :qr)
+                INSERT INTO offer_claims (store_id, offer_id, client_id, status, accepted_at, expires_at, qr_token) 
+                VALUES (:sid, :oid, :uid, 'ACCEPTED', :now, :exp, :qr)
             """), 
-            {"oid": offer_id, "uid": uid, "now": now, "exp": exp, "qr": qr}
+            {"sid": sid, "oid": offer_id, "uid": uid, "now": now, "exp": exp, "qr": qr}
         )
 
         # Atualiza Contagem da Oferta
