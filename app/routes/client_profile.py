@@ -94,12 +94,12 @@ async def get_profile_tickets(
     query = text("""
         SELECT 
             c.id as claim_id,c.client_id , c.qr_token, c.accepted_at, c.expires_at, c.status, c.redeemed_at, c.canceled_at,
-            o.title, r.name as restaurant_name, r.logo_url,
+            o.title, r.name as store_name, r.logo_url,
             CASE WHEN rv.id IS NOT NULL THEN TRUE ELSE FALSE END as has_review
         FROM offer_claims c
         JOIN offers o ON o.id = c.offer_id
-        JOIN restaurants r ON r.id = o.restaurant_id
-        LEFT JOIN restaurant_reviews rv ON rv.offer_claim_id = c.id -- Checa se já avaliou
+        JOIN stores r ON r.id = o.store_id
+        LEFT JOIN store_reviews rv ON rv.offer_claim_id = c.id -- Checa se já avaliou
         WHERE c.client_id = :uid
         ORDER BY 
             CASE WHEN c.status = 'ACCEPTED' THEN 0 ELSE 1 END ASC,
@@ -181,7 +181,7 @@ async def create_review(
 ):
     # 1. Busca dados do ticket para garantir que pertence ao usuário e está USADO
     query_check = text("""
-        SELECT c.id, c.status, c.client_id, o.restaurant_id 
+        SELECT c.id, c.status, c.client_id, o.store_id 
         FROM offer_claims c
         JOIN offers o ON o.id = c.offer_id
         WHERE c.id = :cid AND c.client_id = :uid
@@ -200,12 +200,12 @@ async def create_review(
     # 3. Insere a Review
     try:
         insert_query = text("""
-            INSERT INTO restaurant_reviews (client_id, restaurant_id, offer_claim_id, rating_food, rating_drink, rating_environment, average_score, comment)
+            INSERT INTO store_reviews (client_id, store_id, offer_claim_id, rating_food, rating_drink, rating_environment, average_score, comment)
             VALUES (:uid, :rid, :cid, :rf, :rd, :re, :avg, :comm)
         """)
         await db.execute(insert_query, {
             "uid": uid,
-            "rid": ticket.restaurant_id,
+            "rid": ticket.store_id,
             "cid": payload.claim_id,
             "rf": payload.rating_food,
             "rd": payload.rating_drink,
@@ -214,7 +214,7 @@ async def create_review(
             "comm": payload.comment
         })
         
-        # Opcional: Aqui você poderia atualizar a reputação média do restaurante na tabela restaurants
+        # Opcional: Aqui você poderia atualizar a reputação média do store na tabela stores
         
         await db.commit()
     except Exception as e:
