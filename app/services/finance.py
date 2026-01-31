@@ -32,25 +32,25 @@ async def process_transaction(
     
     # Extração segura de valores anteriores
     if last_account:
-        previous_balance_km = last_account.balance_km
+        previous_balance_ta = last_account.balance_ta
         previous_balance_cents = last_account.balance_cents
-        previous_cost_km_cents = last_account.cost_km_cents
+        previous_cost_ta_cents = last_account.cost_ta_cents
     else:
         # Cold Start (Primeira transação da vida)
-        previous_balance_km = 0
+        previous_balance_ta = 0
         previous_balance_cents = 0
-        previous_cost_km_cents = 0
+        previous_cost_ta_cents = 0
 
     previous_balance_cents = previous_balance_cents or 0
     previous_balance_cents = previous_balance_cents or 0
-    previous_balance_km = previous_balance_km or 0
+    previous_balance_ta = previous_balance_ta or 0
     # 3. CÁLCULOS MATEMÁTICOS 🧮
     
-    # Saldo de KM é simples: soma o amount (que pode ser negativo)
-    new_balance_km = previous_balance_km + amount
+    # Saldo de bt é simples: soma o amount (que pode ser negativo)
+    new_balance_ta = previous_balance_ta + amount
 
-    if new_balance_km < 0:
-         raise HTTPException(400, "Saldo de KM insuficiente.")
+    if new_balance_ta < 0:
+         raise HTTPException(400, "Saldo insuficiente.")
     # A lógica se divide aqui: COMPRA vs GASTO
     if int(amount) > 0:
         # --- CENÁRIO A: COMPRA (Entrada de Estoque) ---
@@ -61,31 +61,31 @@ async def process_transaction(
         # Novo Saldo em Centavos = O que tinha + O que entrou (dinheiro novo)
         new_balance_cents = previous_balance_cents + value_cents
         
-        # Custo Médio = Valor Total em Dinheiro / Total de KMs
-        if new_balance_km > 0:
-            new_cost_km_cents = new_balance_cents / new_balance_km
+        # Custo Médio = Valor Total em Dinheiro / Total de bts
+        if new_balance_ta > 0:
+            new_cost_ta_cents = new_balance_cents / new_balance_ta
         else:
-            new_cost_km_cents = 0 # Evita divisão por zero
+            new_cost_ta_cents = 0 # Evita divisão por zero
             
     else:
         # --- CENÁRIO B: GASTO (Saída de Estoque) ---
         # Quando gasta, o Preço Médio NÃO MUDA. O estoque sai pelo preço que vale.
         
-        new_cost_km_cents = previous_cost_km_cents
+        new_cost_ta_cents = previous_cost_ta_cents
         
-        # O valor monetário sai proporcionalmente aos KMs gastos
+        # O valor monetário sai proporcionalmente aos bts gastos
         # abs(amount) * custo atual
-        debit_cents = abs(amount) * previous_cost_km_cents
+        debit_cents = abs(amount) * previous_cost_ta_cents
         new_balance_cents = int(previous_balance_cents - debit_cents)
         
-        # Ajuste fino: Se zerou KM, zera cents (pra evitar sobrar 1 centavo por arredondamento)
-        if new_balance_km == 0:
+        # Ajuste fino: Se zerou bt, zera cents (pra evitar sobrar 1 centavo por arredondamento)
+        if new_balance_ta == 0:
             new_balance_cents = 0
 
     
     # 4. Atualizar Tabela Mestra (Snapshot no Estabelecimento)
     # (Opcional: converter cents de volta pra float/Reais pro usuário ver fácil, ou manter int)
-    store.balance_km = new_balance_km
+    store.balance_ta = new_balance_ta
     # store.balance_current_value = new_balance_cents / 100.0 (Se tiver esse campo)
     store.updated_at = func.now()
     
@@ -104,13 +104,13 @@ async def process_transaction(
         credit=amount if amount > 0 else 0,
         debit=abs(amount) if amount < 0 else 0,
         
-        balance_km=new_balance_km,
+        balance_ta=new_balance_ta,
         balance_cents=int(new_balance_cents),
         
         # Guardamos o PMP atualizado (arredondado para int ou mantido float se seu banco permitir)
-        # Sugestão: Se cost_km_cents for Integer no banco, cuidado com arredondamento prematuro.
+        # Sugestão: Se cost_ta_cents for Integer no banco, cuidado com arredondamento prematuro.
         # O ideal para custo unitário é guardar Float ou Integer com precisão maior (ex: décimos de centavo).
-        cost_km_cents=int(new_cost_km_cents), 
+        cost_ta_cents=int(new_cost_ta_cents), 
         description=description_data.get("package_name") or description_data.get("offer_name") or "Transação Genérica",
 
         cost_package_cents=int(value * 100) if value > 0 else 0,

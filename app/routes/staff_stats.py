@@ -70,11 +70,11 @@ async def get_dashboard_stats(
       SELECT 
         sum(credit) FILTER (WHERE date_of_bte >= :hist_start)::int as total_credit, 
         sum(debit) FILTER (WHERE date_of_bte >= :hist_start)::int as total_debit, 
-        sum(balance_km) FILTER (WHERE is_current = TRUE)::int as balance_km,
-        sum(debit*cost_km_cents) FILTER (WHERE date_of_bte >= :hist_start)::float/100 as total_cost,
+        sum(balance_ta) FILTER (WHERE is_current = TRUE)::int as balance_ta,
+        sum(debit*cost_ta_cents) FILTER (WHERE date_of_bte >= :hist_start)::float/100 as total_cost,
         sum(cost_package_cents) FILTER (WHERE date_of_bte >= :hist_start)::float/100 as total_purchase,
-        sum(balance_km*cost_km_cents) FILTER (WHERE date_of_bte >= :hist_start and is_current = TRUE)::float/100 as total_balance,
-        max(cost_km_cents) filter (where is_current = TRUE)::float/100 as cost_km_cents_current
+        sum(balance_ta*cost_ta_cents) FILTER (WHERE date_of_bte >= :hist_start and is_current = TRUE)::float/100 as total_balance,
+        max(cost_ta_cents) filter (where is_current = TRUE)::float/100 as cost_ta_cents_current
         FROM store_account 
         where store_id = :rid ;
     """)
@@ -85,8 +85,8 @@ async def get_dashboard_stats(
     })).mappings().first()
    
     finance_stats = DashboardFinanceStats(
-        balance_km=last_entry.balance_km or 0,
-        avg_cost_per_km=last_entry.cost_km_cents_current or 0.0,
+        balance_ta=last_entry.balance_ta or 0,
+        avg_cost_per_ta=last_entry.cost_ta_cents_current or 0.0,
         stock_value_reais=last_entry.total_balance or 0.0,
         total_credit=last_entry.total_credit or 0,
         total_debit=last_entry.total_debit or 0,
@@ -173,12 +173,12 @@ async def get_dashboard_stats(
         total_cancelled_count=kpi.total_cancelled or 0,
         total_no_shows_count=kpi.total_no_show or 0,
         total_accepted_count=kpi.total_accepted or 0,
-        total_conversion_rate=(kpi.total_accepted or 0) / (kpi.total_viewed or 1) * 100 if (kpi.total_viewed or 0) > 0 else 0.0,
-        total_cancellation_rate=(kpi.total_cancelled or 0) / (kpi.total_accepted or 1) * 100 if (kpi.total_accepted or 0) > 0 else 0.0,
+        total_conversion_rate=round((kpi.total_accepted or 0) / (kpi.total_viewed or 1) * 100 if (kpi.total_viewed or 0) > 0 else 0.0, 2),
+        total_cancellation_rate=round((kpi.total_cancelled or 0) / (kpi.total_accepted or 1) * 100 if (kpi.total_accepted or 0) > 0 else 0.0, 2),
         avg_distance_km=round(float(kpi.avg_dist or 0) / 1000.0, 1), 
         best_placement=best_placement,
         best_offer_type=best_type,
-        cost_over_aquistion= (last_entry.total_cost or 0) / kpi.total_redeemed if kpi.total_redeemed > 0 else 0.0
+        cost_over_aquistion= round(float((last_entry.total_cost or 0) / kpi.total_redeemed if kpi.total_redeemed > 0 else 0.0), 2) if kpi.total_redeemed else 0.0
     )
 
     cycle_stats = TimeCycleStats(

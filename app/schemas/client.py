@@ -66,12 +66,15 @@ class ClientProfileResponse(BaseModel):
     avatar_url: str | None
     reputation: float
     level: int
+    gender: str | None
     created_at: datetime
 
 class ClientUpdateProfileRequest(BaseModel):
     name: str | None
     email: str | None
     birth_date: date | None
+    gender: str | None
+    is_newsletter: bool | None
 
 class LocationUpdateSchema(BaseModel):
     lat: float
@@ -92,6 +95,8 @@ class UpdateProfileRequest(BaseModel):
     name: Optional[str] = None
     birth_date: Optional[date] = None
     email: Optional[EmailStr] = None
+    gender: Optional[Literal["M", "F", "O"]] = None
+    is_newsletter: Optional[bool] = None
     avatar_url: Optional[str] = None
 
 class ReviewCreateRequest(BaseModel):

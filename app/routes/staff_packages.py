@@ -44,7 +44,7 @@ async def buy_package(
         transaction = await process_transaction(
             db=db,
             store_id=rid,
-            amount=package.km, # Pega o valor da coluna 'km' do banco
+            amount=package.targets, # Pega o valor da coluna 'targets' do banco
             value=package.price,
             description_data={
                 "package_code": package.code,     # Guarda qual foi o pacote
@@ -58,8 +58,8 @@ async def buy_package(
         # 4. RETORNO PARA O FRONTEND
         return {
             "message": f"Sucesso! {package.name} adquirido.",
-            "new_balance_km": transaction.balance_km, # O saldo atualizado
-            "added_km": package.km,
+            "new_balance_targets": transaction.balance_targets, # O saldo atualizado
+            "added_targets": package.targets,
             "paid_amount": package.price
         }
 

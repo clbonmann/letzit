@@ -130,20 +130,35 @@ Placement = Literal["NORMAL", "CITY_HOME"]
 class QuoteRequest(BaseModel):
     placement: Placement = "NORMAL"
     radius_km: int | None = Field(default=None, ge=1, le=50)
-    city: str | None = None
-    active_minutes: int = Field(30, ge=1, le=240)
+    max_target_total: int = Field(100, ge=1, le=5000)
+    city:  Optional[str] = None
+    is_adult: Optional[bool] = None
+    is_preferred: Optional[bool] = None
+    gender: Optional[Literal["M", "F", "O"]] = None
+    min_level: Optional[int] = None
+    min_reputation: Optional[int] = None
 
+
+class QuoteBalances(BaseModel):
+    current_ta: int
+    projected_ta: int
+    current_home: int
+    projected_home: int
+
+# 2. Modelo principal de resposta
 class QuoteResponse(BaseModel):
-    placement: Placement
-    radius_km: int
-    price_cents: int
-    wallet_balance_km: int = 0
     audience_estimate: int
-    city: str | None = None
-    max_slots: int | None = None
-    used_slots: int | None = None
-    available_slots: int | None = None
-    status: str | None = None
+    capped_audience: int
+    cost: float
+    price_cents: int
+    message: str
+    
+    # Campos que estavam faltando e geravam erro 500
+    placement: str
+    radius_km: Optional[int] = None  # Optional é vital aqui, pois no CITY_HOME ele pode ser nulo
+    
+    # O objeto aninhado
+    balances: QuoteBalances
 
 class CreateOfferRequest(BaseModel):
     placement: Placement = "NORMAL" 
@@ -265,7 +280,7 @@ class DashboardStatsResponse(BaseModel):
     today_accepted: int
     today_redeemed: int
     today_no_shows: int
-    balance_km: float = 0.0
+    balance_ta: float = 0.0
     conversion_rate_percent: float
     active_offers_count: int
     active_offers_breakdown: Dict[str, int]
@@ -317,7 +332,7 @@ class AccountHistoryResponse(BaseModel):
     id: int
     credit: float
     debit: float
-    balance_km: float
+    balance_ta: float
     package_code: Optional[str] = None
     offer_id: Optional[int] = None
     date_of_bte: datetime
@@ -327,7 +342,7 @@ class AccountHistoryResponse(BaseModel):
         from_attributes = True
 
 class BalanceResponse(BaseModel):
-    balance_km: float
+    balance_ta: float
     last_update: datetime
 
 class BuyPackageRequest(BaseModel):
@@ -338,11 +353,12 @@ class PackageResponse(BaseModel):
     code: str
     name: str
     description: Optional[str] = None
-    km: float
+    targets: float
     price: float
     features: List[str]
     is_popular: bool
     color_theme: str
+    icon_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -352,16 +368,17 @@ class PackageCreate(BaseModel):
     code: str
     name: str
     description: str
-    km: float
+    targets: float
     price: float
     features: List[str]
     is_popular: bool = False
     color_theme: str = "slate"
+    icon_url: Optional[str] = None
 
 # 1. Financeiro (Já tínhamos)
 class DashboardFinanceStats(BaseModel):
-    balance_km: int = 0
-    avg_cost_per_km: float
+    balance_ta: int = 0
+    avg_cost_per_ta: float
     stock_value_reais: float
     total_credit: int = 0
     total_debit: int = 0

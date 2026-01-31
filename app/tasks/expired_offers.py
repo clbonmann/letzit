@@ -46,6 +46,19 @@ async def _execute_expired_offers_logic():
             # Executa DENTRO do bloco protegido
             result = await db.execute(offers_query)
             await db.commit()
+
+            claims_query = text("""
+                UPDATE offer_claims
+                 SET status = 'NO_SHOW',
+                updated_at = NOW(),
+                penalty_applied_at = NOW()
+                WHERE expires_at <= now()
+                AND status IN ('ACCEPTED');
+            """)
+        
+            # Executa DENTRO do bloco protegido
+            result = await db.execute(claims_query)
+            await db.commit()
             
             logger.info(f"Sucesso: {result.rowcount} ofertas expiradas.")
 

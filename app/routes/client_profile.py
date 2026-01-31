@@ -1,5 +1,6 @@
 from __future__ import annotations
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from tkinter import FALSE
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +18,7 @@ async def get_my_profile(
     db: AsyncSession = Depends(get_db_session),
 ):
     """Retorna dados do cliente logado."""
-    query = text("SELECT id, name, phone_e164 as phone, email, avatar_url, birth_date, reputation, level, created_at FROM clients WHERE id = :uid")
+    query = text("SELECT id, name, phone_e164 as phone, email, avatar_url, birth_date, reputation, level, created_at, genre, is_blocked FROM clients WHERE id = :uid AND is_deleted = FALSE")
     row = (await db.execute(query, {"uid": uid})).mappings().first()
     if not row: raise HTTPException(404, "Cliente não encontrado.")
     return ClientProfileResponse(**row)
@@ -35,7 +36,7 @@ async def update_my_profile(
     # 1. Nome
     if payload.name is not None: 
         fields.append("name = :name")
-        params["name"] = payload.name
+        params["name"] = payload.name.capitalize()
         
     # 2. Email (String vazia vira NULL no banco para não dar erro de unique em strings vazias)
     if payload.email is not None: 
@@ -43,13 +44,37 @@ async def update_my_profile(
             fields.append("email = NULL") # Força null se vier vazio
         else:
             fields.append("email = :email")
-            params["email"] = payload.email
+            params["email"] = payload.email.lower().strip()
 
         
     # 3. Data de Nascimento
     if payload.birth_date is not None: 
-        fields.append("birth_date = :birth_date") # NOME UNIFICADO
-        params["birth_date"] = payload.birth_date
+        if isinstance(payload.birth_date, str):
+            dob = datetime.strptime(payload.birth_date, "%Y-%m-%d").date()
+        else:
+            dob = payload.birth_date # Assume que já é um objeto date
+
+        fields.append("birth_date = :birth_date") 
+        params["birth_date"] = dob
+    # 2. Lógica para calcular is_adult
+        today = date.today()    
+    # Cálculo preciso da idade (considera se o aniversário já passou este ano)
+        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))    
+    # Define True se maior ou igual a 18
+        is_adult_bool = age >= 18
+    # 3. Adiciona o campo is_adult na query e nos parâmetros
+        fields.append("is_adult = :is_adult")
+        params["is_adult"] = is_adult_bool
+
+    # 4. Gênero
+    if payload.gender is not None: 
+        fields.append("gender = :gender")
+        params["gender"] = payload.gender 
+
+    # 5. Newsletter
+    if payload.is_newsletter is not None: 
+        fields.append("is_newsletter = :is_newsletter")
+        params["is_newsletter"] = payload.is_newsletter
     
     # Se não tem campos, retorna o perfil atual
     if not fields: 
@@ -62,7 +87,7 @@ async def update_my_profile(
         UPDATE clients 
         SET {', '.join(fields)} 
         WHERE id = :uid 
-        RETURNING id, name, phone_e164 as phone, email, birth_date, reputation, level, created_at, avatar_url
+        RETURNING id, name, phone_e164 as phone, email, birth_date, reputation, level, created_at, avatar_url, gender,is_adult
     """)
     
     try:
@@ -131,7 +156,7 @@ async def delete_account(
     db: AsyncSession = Depends(get_db_session),
 ):
     try:
-        await db.execute(text("DELETE FROM clients WHERE id = :uid"), {"uid": uid})
+        await db.execute(text("UPDATE clients SET name = NULL, email = NULL, deleted_at = NOW(), is_newletter = FALSE, is_deleted = TRUE, updated_at = NOW() WHERE id = :uid"), {"uid": uid})
         await db.commit()
     except Exception:
         await db.rollback()

@@ -100,6 +100,7 @@ class Client(Base):
     fcm_token = Column(String, nullable=True)
     email = Column(String, nullable=True)
     name = Column(String, nullable=True)
+    gender = Column(String, nullable=True)
     birth_date = Column(Date, nullable=True)
     avatar_url = Column(String, nullable=True)
     last_loc_at = Column(DateTime(timezone=True), nullable=True)
@@ -110,12 +111,19 @@ class Client(Base):
     cooldown_until = Column(DateTime(timezone=True), nullable=True)
     is_blocked = Column(Boolean, nullable=False, default=False)
     is_deleted = Column(Boolean, nullable=False, default=False)
+    is_adult = Column(Boolean, nullable=False, default=True)
+    is_newsletter = Column(Boolean, nullable=False, default=True)
+
 
     stats = relationship("ClientStats", back_populates="client", uselist=False)
     claims = relationship("OfferClaim", back_populates="client")
     reviews = relationship("StoreReview", back_populates="client")
     # RELAÇÃO COM MATCHMAKER
     targets = relationship("OfferTarget", back_populates="client")
+
+    __table_args__ = (
+        CheckConstraint("gender IN ('M','F','O')", name="ck_client_gender"),
+    )
 
 class ClientStats(Base):
     __tablename__ = "client_stats"
@@ -156,8 +164,9 @@ class Store(Base):
     is_open = Column(Boolean, nullable=False, default=True)
     working_hours = Column(BigInteger, nullable=True)
     geog = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
-    balance_km = Column(Integer, default=0, nullable=False)
+    balance_ta = Column(Integer, default=0, nullable=False)
     balance_home = Column(Integer, default=0, nullable=False)
+    cost_ta_cents = Column(Integer, nullable=True) # Custo em centavos (targets)
     reputation = Column(Float, default=0, nullable=True)
     instagram = Column(String, nullable=True)
     facebook = Column(String, nullable=True)
@@ -215,6 +224,7 @@ class Offer(Base):
     radius_km = Column(Integer, nullable=True)
     start_at = Column(DateTime(timezone=True), server_default=func.now())
     end_at = Column(DateTime(timezone=True), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now())
     status = Column(String, nullable=False, default="CREATED")
     status_reason = Column(String, nullable=True)
@@ -340,9 +350,10 @@ class StoreAccount(Base):
     # Movimentação
     credit = Column(Float, default=0.0) # Entradas (Pacotes, Estornos)
     debit = Column(Float, default=0.0)  # Saídas (Ofertas publicadas)
-    balance_km = Column(Float, nullable=False) # Saldo APÓS a transação (Snapshot)
+    balance_ta = Column(Integer, nullable=False) # Saldo APÓS a transação (Snapshot)
+    balance_home = Column(Integer, nullable=False) # Saldo APÓS a transação (Snapshot)
     description = Column(String, nullable=True) # Descrição da transação
-    cost_km_cents = Column(Integer, nullable=True) # Custo em centavos (km)
+    cost_ta_cents = Column(Integer, nullable=True) # Custo em centavos (targets)
     cost_package_cents = Column(Integer, nullable=True) # Custo do pacote em centavos
     balance_cents = Column(Integer, nullable=True) # Saldo em centavos (opcional)
     # Rastreio
@@ -350,7 +361,7 @@ class StoreAccount(Base):
     offer_id = Column(Integer, nullable=True)  # ID da oferta (futuro)
     
     # Auditoria e Status
-    date_of_bte = Column(DateTime(timezone=True), server_default=func.now())
+    date_of_tae = Column(DateTime(timezone=True), server_default=func.now())
     
     # Controle de Cancelamento/Estorno
     is_current = Column(Boolean, default=True) # Se é o registro válido atual
@@ -374,27 +385,9 @@ class FavouritesGroup(Base):
     max_select = Column(Integer, default=1) # 0 = Ilimitado, 1 = Único, 3 = Top 3
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
+    origin = Column(String, nullable=False) # Ex: "Tabela da origem estrangeira - stores, features ou outros"
     # Relacionamento com os itens
-    items = relationship("Favourite", back_populates="group", cascade="all, delete-orphan")
-
-
-# 2. Tabela de Itens Favoritos (Ex: Sushi, Pizza, Pet Friendly)
-class Favourite(Base):
-    __tablename__ = "favourites"
-
-    id = Column(Integer, primary_key=True, index=True)
-    group_id = Column(Integer, ForeignKey("favourites_group.id"), nullable=False)
-    
-    slug = Column(String, unique=True, index=True, nullable=False) # Ex: "cuisine-sushi"
-    name = Column(String, nullable=False) # Ex: "Sushi / Japonesa"
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    # Relacionamentos
-    group = relationship("FavouritesGroup", back_populates="items")
-    # Relacionamento com clientes (via tabela associativa abaixo)
-    client_associations = relationship("ClientFavourite", back_populates="favourite")
+    favourites = relationship("ClientFavourite", back_populates="group", cascade="all, delete-orphan")
 
 
 # 3. Tabela de Ligação (Cliente <-> Favorito)
@@ -404,12 +397,12 @@ class ClientFavourite(Base):
     # Chave primária composta (evita duplicidade do mesmo favorito pro mesmo cliente)
     client_id = Column(Integer, ForeignKey("clients.id"), primary_key=True) # Ajuste "users.id" se sua tabela de clientes tiver outro nome
     favourite_id = Column(Integer, ForeignKey("favourites.id"), primary_key=True)
-    
+    group_id = Column(Integer, ForeignKey("favourites_group.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relacionamentos para facilitar queries
     # client = relationship("User", back_populates="favourites") # Precisaria adicionar no model User
-    favourite = relationship("Favourite", back_populates="client_associations")
+    group = relationship("FavouritesGroup", back_populates="favourites")
 
 class Packages(Base):
     __tablename__ = "packages"
@@ -421,8 +414,8 @@ class Packages(Base):
     
     name = Column(String, nullable=False)        # Ex: "Pescaria Rápida"
     description = Column(String, nullable=True)  # Ex: "Ideal para testar..."
-    
-    km = Column(Float, nullable=False)           # Quantidade de créditos (ex: 500)
+    icon_url = Column(String, nullable=True)         # URL ou nome do ícone (ex: "fish-icon.png")
+    targets = Column(Float, nullable=False)           # Quantidade de créditos (ex: 500)
     price = Column(Float, nullable=False)        # Preço (ex: 49.90)
     
     # Lista de vantagens para exibir no card (ex: ["Alcance 500m", "Suporte Básico"])

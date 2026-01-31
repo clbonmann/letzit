@@ -1,11 +1,11 @@
 from __future__ import annotations
 from datetime import datetime, timezone, timedelta
-from typing import List, Optional
+from typing import List, Literal, Optional
 import traceback
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Header
 from shapely import Geometry
 from geoalchemy2.shape import from_shape
-from sqlalchemy import insert, text, select, func, cast
+from sqlalchemy import and_, exists, insert, text, select, func, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2.functions import ST_DWithin
 from geoalchemy2.shape import from_shape, to_shape # Importações para conversão de geometrias
@@ -13,13 +13,13 @@ from geoalchemy2 import Geometry as GAGeometry
 # Imports do App
 from app.db import get_db_session
 from app.deps_staff import get_current_staff
-from app.constants.pricing import PRICE_PER_KM_ADHOC
+from app.constants.pricing import PRICE_PER_TA_ADHOC
 from app.constants.offer_types import OFFER_TYPE_METADATA
 from app.services.storage import upload_image  # Certifique-se que esta função existe no seu projeto
 from app.services.finance import process_transaction
 
 # Models e Schemas
-from app.models import Offer, OfferTarget, Store, Client, OfferType
+from app.models import Offer, OfferTarget, Store, Client, OfferType, ClientFavourite
 from app.schemas.staff import (
     QuoteRequest, QuoteResponse, CreateOfferRequest, CreateOfferResponse,
     CloseOfferResponse
@@ -158,14 +158,15 @@ async def estimate_audience(
     staff: dict = Depends(get_current_staff),
     x_store_id: int | None = Header(default=None, alias="x-store-id"),
 ):
-    logged_rid = int(staff["store_id"])
-    rid = logged_rid
+    logged_sid = int(staff["store_id"])
+    sid = logged_sid
+    active_threshold = datetime.now(timezone.utc) - timedelta(minutes=15)  
 
     if staff.get("role") == "INTERNAL_ADMIN" and x_store_id:
-        rid = x_store_id
+        sid = x_store_id
 
     # 1. Busca Localização do estabelecimento
-    stmt_rest = select(Store.geog).where(Store.id == rid)
+    stmt_rest = select(Store.geog).where(Store.id == sid)
     store_geog = (await db.execute(stmt_rest)).scalar_one_or_none()
 
     if not store_geog:
@@ -174,24 +175,22 @@ async def estimate_audience(
     # --- CORREÇÃO AQUI ---
     # 1. to_shape: Converte o WKBElement do banco para um objeto Shapely (Python)
     # 2. from_shape: Converte o objeto Shapely de volta para um Elemento SQL com SRID correto
-    # Isso resolve o conflito de tipos entre GeoAlchemy2 e Asyncpg
-    shapely_geom = to_shape(store_geog)
-    store_geo_element = from_shape(shapely_geom, srid=4326)
-
+ 
     # 2. Converte KM para Metros
     radius_meters = radius_km * 1000
 
     # 3. Filtros
     filters = [
-        ST_DWithin(Client.geog, store_geo_element, radius_meters),
+        ST_DWithin(Client.geog, store_geog, radius_meters),
         Client.is_blocked == False,
+        Client.is_deleted == False,
         Client.geog.is_not(None),
-        Client.last_loc_at >= func.now() - text("INTERVAL '30 days'") 
+        Client.last_loc_at >= active_threshold 
     ]
 
     # 4. Contagem Total
     count = (await db.execute(select(func.count(Client.id)).where(*filters))).scalar() or 0
-
+  
     # 5. Amostra de Pontos (Limitado a 100)
     stmt_points = select(
         func.ST_Y(cast(Client.geog, GAGeometry)).label("lat"),
@@ -212,68 +211,160 @@ async def quote_offer(
     payload: QuoteRequest, 
     db: AsyncSession = Depends(get_db_session), 
     staff: dict = Depends(get_current_staff)
-):
-    rid = int(staff["store_id"])
+):  
+    
+    sid = int(staff["store_id"])
 
-    # 1. Buscar estabelecimento (Geo + Saldo de KM)
-    stmt_rest = select(Store).where(Store.id == rid)
-    result_rest = await db.execute(stmt_rest)
-    rest = result_rest.scalar_one_or_none()
+    # 1. Buscar estabelecimento (Geo + Saldo de targets)
+    stmt_store = select(Store).where(Store.id == sid)
+    result_store = await db.execute(stmt_store)
+    store = result_store.scalar_one_or_none()
 
-    if not rest or not rest.geog:
+    if not store or not store.geog:
         raise HTTPException(400, "Localização do estabelecimento inválida.")
 
+    if payload.placement == 'CITY_HOME':
+        # Se for Destaque Home, verifica o saldo específico de Home
+        if store.balance_home <= 0:
+            raise HTTPException(
+                status_code=402, # 402 Payment Required (Semântico) ou 400
+                detail="Saldo de 'Destaque Home' insuficiente. Adquira um pacote na loja para usar este formato."
+            )
+            
+    else: 
+        # Se for NORMAL (ou qualquer outro), verifica o saldo de Iscas (BT)
+        if store.balance_ta <= 0:
+            raise HTTPException(
+                status_code=402,
+                detail="Seu saldo de Iscas (BT) está zerado. Você precisa comprar targets para criar ofertas de raio."
+            )
+
+    projected_balance_ta = store.balance_ta
+    projected_balance_home = store.balance_home
+    price_cents = store.cost_ta_cents or 0
+    quote_msg = ""
+    consumption = 0
+    
+    # 2. Buscar Audiência Estimada com base nos filtros
+  
     # PLACEMENT "NORMAL"
     if payload.placement == "NORMAL":
         if not payload.radius_km:
-            raise HTTPException(400, "radius_km é obrigatório para placement NORMAL.")
+            raise HTTPException(400, "O raio de ação é obrigatório para este tipo de oferta.")
 
-        radius_km = int(payload.radius_km)
-        radius_meters = radius_km * 1000
+    radius_km = int(payload.radius_km)
+    radius_meters = radius_km * 1000
+    audience_estimate=0    
+    active_threshold = datetime.now(timezone.utc) - timedelta(minutes=15)
+
+    stmt = select(func.count(Client.id)).where(
+    and_(
+        Client.is_deleted.is_(False),
+        Client.is_blocked.is_(False),
+        Client.geog.is_not(None),
+        Client.last_loc_at >= active_threshold, # <--- Filtro dos 15 minutos
+        ST_DWithin(Client.geog, store.geog, radius_meters)
+            )
+    )
+
+    # 3. Filtros Opcionais (Demográficos)
+    
+    # Filtro: Maioridade
+    if payload.is_adult:
+        stmt = stmt.where(Client.is_adult.is_(True))
+
+        # Filtro: Gênero (M, F, O)
+    if payload.gender and payload.gender != 'ALL':
+        stmt = stmt.where(Client.gender == payload.gender)
+
+        # Filtro: Nível Mínimo
+    if payload.min_level and payload.min_level > 0:
+        stmt = stmt.where(Client.level >= payload.min_level)
+
+        # Filtro: Reputação Mínima
+    if payload.min_reputation and payload.min_reputation > 0:
+        stmt = stmt.where(Client.reputation >= payload.min_reputation)
+
+        # 4. Filtro Complexo: "Sou Favorito"
+        # Lógica: O cliente precisa ter um registro na tabela client_favorites 
+        # que aponte para este restaurante.
+    if payload.is_preferred:
+        favorite_subquery = select(1).where(
+            and_(
+                ClientFavourite.client_id == Client.id,
+                ClientFavourite.favourite_id == store.id,
+                ClientFavourite.group_id == 1
+            )
+        )
+        stmt = stmt.where(exists(favorite_subquery))
+
+       
+    # 5. Execução
+    result = await db.execute(stmt)
+    audience_estimate = result.scalar() or 0
+    if audience_estimate > payload.max_target_total:
+        audience_estimate = payload.max_target_total
+    # Calcular Preço
         
-        # Calcular Audiência
-        stmt_aud = select(func.count(Client.id)).where(
-            ST_DWithin(Client.geog, rest.geog, radius_meters)
-        )
-        aud_result = await db.execute(stmt_aud)
-        audience = aud_result.scalar() or 0
+        
+    if payload.placement == "NORMAL":
 
-        # Calcular Preço
-        price_cents = 0
-        quote_msg = ""
+        projected_balance_ta = store.balance_ta - audience_estimate
 
-        if rest.balance_km >= radius_km:
-            price_cents = 0
-            quote_msg = f"Coberto pelo seu pacote (Saldo atual: {rest.balance_km}km)"
+        if  projected_balance_ta >= 0:
+            price_cents = audience_estimate * price_cents 
+            quote_msg = f"Preço baseado no valor atual ddo seu estoque de targets ({store.balance_ta})."
         else:
-            price_amount = radius_km * PRICE_PER_KM_ADHOC
-            price_cents = int(price_amount * 100)
-            quote_msg = f"Preço avulso por Km (Sem pacote ativo)"
+            price_cents = 0
+            quote_msg = "Seu saldo de targets (TA) é insuficiente para atingir toda a audiência estimada."
+    else:
+        price_cents = 0  
+        quote_msg = "Preço fixo para destaque na Home da Cidade."
+        projected_balance_home = store.balance_home - 1
+        quote_msg = "Preço fixo (1 Crédito Home) para destaque na cidade."
 
-        return QuoteResponse(
-            placement="NORMAL",
-            radius_km=radius_km,
-            price_cents=price_cents,
-            wallet_balance_km=rest.balance_km,
-            audience_estimate=audience,
-            message=quote_msg
-        )
+    # Garante que price_cents seja um inteiro (0 se for None)
+    safe_price_cents = int(price_cents or 0)
 
+    return {
+        # Campos de Audiência e Custo
+        "audience_estimate": audience_estimate, # Antes estava 'available_audience'? Ajuste para o nome do Schema
+        "capped_audience": payload.max_target_total,
+        "cost": round(safe_price_cents / 100, 2), # Opcional, se seu front usa
+        "price_cents": safe_price_cents,
+        "message": quote_msg,
+        
+        # --- CORREÇÃO: Adicionando os campos que o Pydantic reclamou que faltavam ---
+        "placement": payload.placement,
+        "radius_km": payload.radius_km, # Pode ser None se for CITY_HOME, verifique se o Schema permite Optional[int]
+        
+        # Saldos
+        "balances": {
+            "current_ta": store.balance_ta,
+            "projected_ta": projected_balance_ta,
+            "current_home": store.balance_home,
+            "projected_home": projected_balance_home
+        }
+    }
+        
     # PLACEMENT "CITY_HOME"
     if payload.placement == "CITY_HOME":
-        fixed_radius = 20
-        fixed_price = 5000 
-        
-        stmt_aud = select(func.count(Client.id)).where(
-            ST_DWithin(Client.geog, rest.geog, fixed_radius * 1000)
+               
+        stmt_home = select(func.count(Client.id)).where(
+        and_(
+            Client.deleted_at.is_(None),
+            Client.is_blocked.is_(False),
+            Client.last_loc_at >= active_threshold, # <--- Filtro dos 15 minutos
+            ST_DWithin(Client.geog, store.geog, radius_meters)
+            )
         )
-        audience = (await db.execute(stmt_aud)).scalar() or 0
+        audience = (await db.execute(stmt_home)).scalar() or 0
 
         return QuoteResponse(
             placement="CITY_HOME",
-            radius_km=fixed_radius,
-            price_cents=fixed_price,
-            wallet_balance_km=rest.balance_km,
+            radius_km=radius_km,
+            price_cents=price_cents,
+            wallet_balance_ta=store.balance_ta,
             audience_estimate=audience,
             status="AVAILABLE",
             message="Destaque na Home da Cidade"
