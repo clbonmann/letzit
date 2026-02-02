@@ -1,6 +1,5 @@
 from __future__ import annotations
 from datetime import date, datetime, timezone
-from tkinter import FALSE
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,7 +17,7 @@ async def get_my_profile(
     db: AsyncSession = Depends(get_db_session),
 ):
     """Retorna dados do cliente logado."""
-    query = text("SELECT id, name, phone_e164 as phone, email, avatar_url, birth_date, reputation, level, created_at, genre, is_blocked FROM clients WHERE id = :uid AND is_deleted = FALSE")
+    query = text("SELECT id, name, phone_e164 as phone, email, avatar_url, birth_date, reputation, level, created_at, genre, is_blocked FROM clients WHERE id = :uid AND is_deleted = False")
     row = (await db.execute(query, {"uid": uid})).mappings().first()
     if not row: raise HTTPException(404, "Cliente não encontrado.")
     return ClientProfileResponse(**row)
@@ -120,7 +119,7 @@ async def get_profile_tickets(
         SELECT 
             c.id as claim_id,c.client_id , c.qr_token, c.accepted_at, c.expires_at, c.status, c.redeemed_at, c.canceled_at,
             o.title, r.name as store_name, r.logo_url,
-            CASE WHEN rv.id IS NOT NULL THEN TRUE ELSE FALSE END as has_review
+            CASE WHEN rv.id IS NOT NULL THEN TRUE ELSE False END as has_review
         FROM offer_claims c
         JOIN offers o ON o.id = c.offer_id
         JOIN stores r ON r.id = o.store_id
@@ -156,7 +155,7 @@ async def delete_account(
     db: AsyncSession = Depends(get_db_session),
 ):
     try:
-        await db.execute(text("UPDATE clients SET name = NULL, email = NULL, deleted_at = NOW(), is_newletter = FALSE, is_deleted = TRUE, updated_at = NOW() WHERE id = :uid"), {"uid": uid})
+        await db.execute(text("UPDATE clients SET name = NULL, email = NULL, deleted_at = NOW(), is_newletter = False, is_deleted = TRUE, updated_at = NOW() WHERE id = :uid"), {"uid": uid})
         await db.commit()
     except Exception:
         await db.rollback()
